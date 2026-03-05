@@ -421,14 +421,33 @@ export default async function handler(req, res) {
         cache.set(slug, { data: result, timestamp: Date.now() });
         return res.status(200).json(result);
       }
-      const debugInfo = debug ? {
-        htmlLength: html.length,
-        title: html.match(/<title>(.*?)<\/title>/)?.[1] || "",
-        htmlSnippet: html.substring(0, 2000),
-        candidatePlayers: players,
-      } : undefined;
+      if (debug) {
+        const $d = cheerio.load(html);
+        // Find all classes containing player/card/stat/best/rank keywords
+        const relevantClasses = [...new Set($d("[class]").map((i, el) => $d(el).attr("class")).get())]
+          .filter(c => /player|card|stat|best|rank|leaderboard|ovr|overall|rating|start|lineup/i.test(c));
+        // Find links with player hrefs
+        const playerLinks = $d("a[href*='/player']").map((i, el) => ({
+          href: $d(el).attr("href"),
+          text: $d(el).text().trim().substring(0, 50),
+          parentClass: $d(el).parent().attr("class") || "",
+        })).get().slice(0, 15);
+        // Get body HTML around where player data might be (search for "OVR" or percentage patterns)
+        const bodyHtml = $d("body").html() || "";
+        const ovrIdx = bodyHtml.indexOf("OVR");
+        const pctIdx = bodyHtml.indexOf("%");
+        const debugInfo = {
+          htmlLength: html.length,
+          title: html.match(/<title>(.*?)<\/title>/)?.[1] || "",
+          relevantClasses: relevantClasses.slice(0, 30),
+          playerLinks,
+          htmlAroundOvr: ovrIdx > -1 ? bodyHtml.substring(Math.max(0, ovrIdx - 500), ovrIdx + 1000) : "no OVR found",
+          htmlAroundPct: pctIdx > -1 ? bodyHtml.substring(Math.max(0, pctIdx - 500), pctIdx + 500) : "no % found",
+          candidatePlayers: players,
+        };
+        strategies.push(debugInfo);
+      }
       strategies.push(`html: fetched (${html.length} bytes) but no valid players parsed (${players.length} candidates rejected)`);
-      if (debug && debugInfo) strategies.push(debugInfo);
     } else {
       strategies.push(`html: ${error}`);
     }
