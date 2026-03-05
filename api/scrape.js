@@ -151,161 +151,50 @@ function findPlayerArray(obj, depth) {
 // Parse HTML with cheerio for DOM-based player extraction
 function parsePlayersFromHtml(html, slug) {
   const $ = cheerio.load(html);
-  const expectedStats = STAT_MAP[slug] || [];
   const results = [];
 
   function clean(text) {
     return (text || "").trim().replace(/\s+/g, " ");
   }
 
-  // Strategy A: Table rows
-  $("table tbody tr").each(function (i) {
+  // Primary strategy: mut.gg uses .player-list-item-usage containers
+  $(".player-list-item-usage").each(function () {
     if (results.length >= 5) return false;
-    const $row = $(this);
-    const cells = $row.find("td");
-    if (cells.length < 3) return;
+    const $item = $(this);
 
-    const allText = clean($row.text());
+    // Name
+    const first = clean($item.find(".player-list-item__name-first").text());
+    const last = clean($item.find(".player-list-item__name-last").text());
+    const name = `${first} ${last}`.trim();
+    if (!name) return;
 
-    let ovr = 0;
-    const $ovr = $row.find("[class*='ovr'], [class*='overall'], [class*='rating']").first();
-    if ($ovr.length) {
-      ovr = parseInt(clean($ovr.text())) || 0;
-    } else {
-      cells.each(function (ci) {
-        if (ci >= 3 || ovr) return;
-        const n = parseInt(clean($(this).text()));
-        if (n >= 80 && n <= 99) ovr = n;
-      });
-    }
+    // OVR
+    const ovr = parseInt(clean($item.find(".player-list-item__score-value").text())) || 0;
 
-    let name = "";
-    const $nameLink = $row.find("a[href*='/player/'], a[href*='/players/']").first();
-    if ($nameLink.length) name = clean($nameLink.text());
-    else {
-      const $nameEl = $row.find("[class*='name'], [class*='player']").first();
-      if ($nameEl.length) name = clean($nameEl.text());
-    }
+    // Program / Card
+    const card = clean($item.find(".player-list-item__program").text());
 
-    let card = "";
-    const $card = $row.find("[class*='program'], [class*='promo'], [class*='set']").first();
-    if ($card.length) card = clean($card.text());
+    // Archetype
+    const arch = clean($item.find(".player-list-item__archetype").text());
 
-    let arch = "";
-    const $arch = $row.find("[class*='archetype'], [class*='arch']").first();
-    if ($arch.length) arch = clean($arch.text());
+    // Starting %
+    const startText = clean($item.find(".player-list-item-usage__percentage-value").text());
+    const start = parseFloat(startText) || 0;
 
-    let start = 0;
-    const startMatch = allText.match(/(\d+\.?\d*)%/);
-    if (startMatch) start = parseFloat(startMatch[1]);
-
+    // BND flag
+    const allText = clean($item.text());
     const bnd = allText.includes("BND") || allText.includes("NAT");
 
+    // Stats (stat-name/stat-value pairs)
     const s = {};
-    const statValues = [];
-    $row.find("[class*='stat'], td").each(function () {
-      const n = parseInt(clean($(this).text()));
-      if (n >= 50 && n <= 99) statValues.push(n);
+    $item.find(".player-list-item__stat").each(function () {
+      const statName = clean($(this).find(".player-list-item__stat-name").text());
+      const statVal = parseInt(clean($(this).find(".player-list-item__stat-value").text())) || 0;
+      if (statName && statVal) s[statName] = statVal;
     });
-    for (let si = 0; si < expectedStats.length && si < statValues.length; si++) {
-      s[expectedStats[si]] = statValues[si];
-    }
 
-    if (name || ovr) {
-      results.push({ name: name || "Unknown", card, ovr, arch, start, bnd, s });
-    }
+    results.push({ name, card, ovr, arch, start, bnd, s });
   });
-
-  // Strategy B: Card/div-based layout
-  if (results.length === 0) {
-    const cardSelectors = [
-      "[class*='player-card']", "[class*='player-item']", "[class*='player-row']",
-      "[class*='best-player']", "[class*='PlayerCard']", "[class*='PlayerItem']",
-      "[class*='leaderboard'] [class*='item']", "[class*='ranking'] [class*='item']",
-    ];
-
-    let $cards = $();
-    for (const sel of cardSelectors) {
-      $cards = $(sel);
-      if ($cards.length >= 1) break;
-    }
-
-    $cards.each(function (i) {
-      if (results.length >= 5) return false;
-      const $card = $(this);
-      const allText = clean($card.text());
-
-      let ovr = 0;
-      const $ovr = $card.find("[class*='ovr'], [class*='overall'], [class*='rating']").first();
-      if ($ovr.length) ovr = parseInt(clean($ovr.text())) || 0;
-
-      let name = "";
-      const $name = $card.find("[class*='name'], a[href*='/player']").first();
-      if ($name.length) name = clean($name.text());
-
-      let cardName = "";
-      const $prog = $card.find("[class*='program'], [class*='promo'], [class*='set']").first();
-      if ($prog.length) cardName = clean($prog.text());
-
-      let arch = "";
-      const $arch = $card.find("[class*='archetype'], [class*='arch']").first();
-      if ($arch.length) arch = clean($arch.text());
-
-      let start = 0;
-      const startMatch = allText.match(/(\d+\.?\d*)%/);
-      if (startMatch) start = parseFloat(startMatch[1]);
-
-      const bnd = allText.includes("BND") || allText.includes("NAT");
-
-      const s = {};
-      const statValues = [];
-      $card.find("[class*='stat'] [class*='value'], [class*='stat-val']").each(function () {
-        const n = parseInt(clean($(this).text()));
-        if (n >= 50 && n <= 99) statValues.push(n);
-      });
-      for (let si = 0; si < expectedStats.length && si < statValues.length; si++) {
-        s[expectedStats[si]] = statValues[si];
-      }
-
-      if (name || ovr) {
-        results.push({ name: name || "Unknown", card: cardName, ovr, arch, start, bnd, s });
-      }
-    });
-  }
-
-  // Strategy C: Link-based fallback (only match player-specific links, not nav)
-  if (results.length === 0) {
-    const seen = new Set();
-    const NAV_WORDS = new Set(["players","stats","leaderboard","best","mut","madden","weekly","spotlight","token","home","news","sets","abilities","search","login","sign"]);
-    $("a[href*='/players/']").each(function () {
-      if (results.length >= 5) return false;
-      const href = $(this).attr("href") || "";
-      // Only match links that look like individual player pages (with an ID or slug after /players/)
-      if (!href.match(/\/players?\/\d+/) && !href.match(/\/players?\/[a-z]+-[a-z]+/i)) return;
-      const name = clean($(this).text());
-      if (!name || name.length < 3 || name.length > 40 || seen.has(name)) return;
-      // Skip nav-like text
-      if (NAV_WORDS.has(name.toLowerCase().split(" ")[0].toLowerCase())) return;
-      if (name.split(" ").length < 2) return; // Player names have first + last
-      seen.add(name);
-
-      const $container = $(this).closest("tr, [class*='card'], [class*='item'], [class*='row'], div");
-      if (!$container.length) return;
-
-      const allText = clean($container.text());
-      let ovr = 0;
-      const ovrMatch = allText.match(/\b(8\d|9\d)\b/);
-      if (ovrMatch) ovr = parseInt(ovrMatch[0]);
-
-      let start = 0;
-      const startMatch = allText.match(/(\d+\.?\d*)%/);
-      if (startMatch) start = parseFloat(startMatch[1]);
-
-      const bnd = allText.includes("BND") || allText.includes("NAT");
-
-      results.push({ name, card: "", ovr, arch: "", start, bnd, s: {} });
-    });
-  }
 
   return results;
 }
@@ -415,9 +304,8 @@ export default async function handler(req, res) {
 
       // Parse HTML with cheerio
       const players = parsePlayersFromHtml(html, slug);
-      const validPlayers = players.filter(p => p.ovr >= 80 || Object.keys(p.s).length > 0);
-      if (validPlayers.length > 0) {
-        const result = { position: slug, updated: new Date().toISOString(), players: validPlayers.slice(0, 5), error: null, strategy: "cheerio" };
+      if (players.length > 0) {
+        const result = { position: slug, updated: new Date().toISOString(), players: players.slice(0, 5), error: null, strategy: "cheerio" };
         cache.set(slug, { data: result, timestamp: Date.now() });
         return res.status(200).json(result);
       }
