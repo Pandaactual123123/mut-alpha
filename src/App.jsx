@@ -15,19 +15,23 @@ const C = {
 const PC = {
   QB:{subs:null,formula:"QMS = (AP_Disc×.40)+(Release×.30)+(Thresh×.30)",engine:"QB Meta Score",stats:["SPD","THP","SAC","MAC","DAC"]},
   HB:{subs:null,formula:"RBVS = (BEV×.30)+(BCV×.20)+(PDM×.20)+(AEQ×.30)",engine:"RB Value Score",stats:["SPD","CAR","COD","TRK","BTK"]},
+  FB:{subs:null,formula:"Fullback Utility Score",engine:"FB Utility Score",stats:["SPD","CAR","RBK","IMP","TRK"]},
   WR:{subs:null,formula:"WREE = (BEV×.35)+(RLS×.10)+(REC×.10)+(PDM×.15)+(AEQ×.30)",engine:"WR Eval Engine v2",stats:["SPD","CTH","SRR","MRR","DRR"]},
+  TE:{subs:null,formula:"TE Versatility Score",engine:"TE Versatility Score",stats:["SPD","CTH","SRR","RBK","CIT"]},
   OL:{subs:["LT","LG","C","RG","RT"],formula:"TBS = Stat(60%)+STR(22.5%)+WGT(17.5%)+Abilities+PU",engine:"True-Blocking Score",stats:[]},
   DL:{subs:["LEDG","DT","REDG"],formula:"MVS = (Core×.40)+(Phys×.20)+(Traits×.15)+(AP×.25)",engine:"Meta Value Score",stats:[]},
   DB:{subs:["CB","FS","SS"],formula:"TCS = (Cov×.35)+(MoveDNA×.25)+(Frame×.15)+(AP×.25)",engine:"True Coverage Score",stats:[]},
 };
 
+const FB_S=["SPD","CAR","RBK","IMP","TRK"];
+const TE_S=["SPD","CTH","SRR","RBK","CIT"];
 const OL_S=["SPD","ACC","AGI","STR","JMP"];
 const DL_S=["SPD","ACC","AGI","STR","JMP"];
 const DT_S=["SPD","TAK","BSH","PMV","FMV"];
 const CB_S=["SPD","JMP","MCV","ZCV","PRS"];
 const FS_S=["SPD","TAK","POW","MCV","ZCV"];
 const SS_S=["SPD","TAK","POW","MCV","ZCV"];
-function gS(p,s){if(p==="OL")return OL_S;if(p==="DL")return s==="DT"?DT_S:DL_S;if(p==="DB"){if(s==="CB")return CB_S;if(s==="FS")return FS_S;return SS_S;}return PC[p]?.stats||[];}
+function gS(p,s){if(p==="FB")return FB_S;if(p==="TE")return TE_S;if(p==="OL")return OL_S;if(p==="DL")return s==="DT"?DT_S:DL_S;if(p==="DB"){if(s==="CB")return CB_S;if(s==="FS")return FS_S;return SS_S;}return PC[p]?.stats||[];}
 
 const INIT=[
   {pos:"QB",sub:"QB",name:"Robert Griffin III",card:"Flashbacks",ovr:96,arch:"Scrambler",start:17.0,s:{SPD:94,THP:96,SAC:93,MAC:92,DAC:96}},
@@ -107,28 +111,28 @@ const THRESHOLDS=[
 ];
 
 const RM=[
-  {pos:"QB",sub:"QB",label:"Quarterbacks"},
-  {pos:"HB",sub:"HB",label:"Halfbacks"},
-  {pos:"WR",sub:"WR",label:"Wide Receivers"},
-  {pos:"OL",sub:"LT",label:"Left Tackles"},{pos:"OL",sub:"LG",label:"Left Guards"},
-  {pos:"OL",sub:"C",label:"Centers"},{pos:"OL",sub:"RG",label:"Right Guards"},
-  {pos:"OL",sub:"RT",label:"Right Tackles"},
-  {pos:"DL",sub:"LEDG",label:"Left Edges"},{pos:"DL",sub:"DT",label:"Defensive Tackles"},
-  {pos:"DL",sub:"REDG",label:"Right Edges"},
-  {pos:"DB",sub:"CB",label:"Cornerbacks"},{pos:"DB",sub:"FS",label:"Free Safeties"},
-  {pos:"DB",sub:"SS",label:"Strong Safeties"},
+  {pos:"QB",sub:"QB",label:"Quarterbacks",slug:"qb"},
+  {pos:"HB",sub:"HB",label:"Halfbacks",slug:"hb"},
+  {pos:"FB",sub:"FB",label:"Fullbacks",slug:"fb"},
+  {pos:"WR",sub:"WR",label:"Wide Receivers",slug:"wr"},
+  {pos:"TE",sub:"TE",label:"Tight Ends",slug:"te"},
+  {pos:"OL",sub:"LT",label:"Left Tackles",slug:"lt"},{pos:"OL",sub:"LG",label:"Left Guards",slug:"lg"},
+  {pos:"OL",sub:"C",label:"Centers",slug:"c"},{pos:"OL",sub:"RG",label:"Right Guards",slug:"rg"},
+  {pos:"OL",sub:"RT",label:"Right Tackles",slug:"rt"},
+  {pos:"DL",sub:"LEDG",label:"Left Edges",slug:"ledg"},{pos:"DL",sub:"DT",label:"Defensive Tackles",slug:"dt"},
+  {pos:"DL",sub:"REDG",label:"Right Edges",slug:"redg"},
+  {pos:"DB",sub:"CB",label:"Cornerbacks",slug:"cb"},{pos:"DB",sub:"FS",label:"Free Safeties",slug:"fs"},
+  {pos:"DB",sub:"SS",label:"Strong Safeties",slug:"ss"},
 ];
 
-async function fetchLive(label){
-  const sys=`You search mut.gg for the best ${label} in Madden 26 MUT. Return ONLY a valid JSON array of the top 5 players. Each object: {"name":"...","card":"...","ovr":96,"arch":"...","start":17.0,"s":{"STAT1":99,"STAT2":98,...}}. Use the stat abbreviations from mut.gg. No markdown, no backticks, no text outside the JSON array.`;
+async function fetchLive(slug){
   try{
-    const r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1500,system:sys,messages:[{role:"user",content:`Search mut.gg for the current top 5 best ${label} in MUT 26 by starting percentage. Return JSON array only.`}],tools:[{type:"web_search_20250305",name:"web_search"}]})});
+    const r=await fetch(`/api/scrape?pos=${slug}`);
+    if(!r.ok)return null;
     const d=await r.json();
-    const t=d.content?.filter(b=>b.type==="text").map(b=>b.text).join("\n")||"";
-    const c=t.replace(/```json|```/g,"").trim();
-    const p=JSON.parse(c);
-    if(Array.isArray(p)&&p.length>0&&p[0].name)return p;
-  }catch(e){console.error(`Live fetch failed for ${label}:`,e);}
+    if(d.error||!d.players?.length)return null;
+    return d.players;
+  }catch(e){console.error(`Live fetch failed for ${slug}:`,e);}
   return null;
 }
 
@@ -201,17 +205,19 @@ function Bars({pl}){
 export default function App(){
   const[pos,setPos]=useState("QB"),[sub,setSub]=useState(null),[tab,setTab]=useState("players");
   const[search,setSearch]=useState(""),[tt,setTt]=useState(false);
-  const[players,setPlayers]=useState(INIT),[loaded,setLoaded]=useState(false);
-  const[rfr,setRfr]=useState(false),[rfrP,setRfrP]=useState(""),[lr,setLr]=useState("Initial · Mar 2 2026 · mut.gg verified");
+  const[players,setPlayers]=useState(()=>{try{const c=localStorage.getItem("mut-alpha-players");if(c){const p=JSON.parse(c);if(Array.isArray(p)&&p.length>0)return p;}}catch(e){}return INIT;});
+  const[loaded,setLoaded]=useState(false);
+  const[rfr,setRfr]=useState(false),[rfrP,setRfrP]=useState(""),[lr,setLr]=useState(()=>{try{return localStorage.getItem("mut-alpha-lr")||"Initial · Mar 2 2026 · mut.gg verified";}catch(e){return "Initial · Mar 2 2026 · mut.gg verified";}});
 
   useEffect(()=>{const l=document.createElement("link");l.href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Outfit:wght@300;400;500;600;700;800;900&display=swap";l.rel="stylesheet";document.head.appendChild(l);setTimeout(()=>setLoaded(true),150);},[]);
   useEffect(()=>{setSub(null);},[pos]);
 
   const doRefresh=useCallback(async()=>{
     if(rfr)return;setRfr(true);let nP=[...players],up=0;
-    for(const rm of RM){
-      setRfrP(`${rm.label}...`);
-      const res=await fetchLive(rm.label);
+    for(let i=0;i<RM.length;i++){
+      const rm=RM[i];
+      setRfrP(`${i+1}/${RM.length} · ${rm.label}...`);
+      const res=await fetchLive(rm.slug);
       if(res&&Array.isArray(res)){
         nP=nP.filter(p=>!(p.pos===rm.pos&&p.sub===rm.sub));
         res.forEach(r=>nP.push({pos:rm.pos,sub:rm.sub,name:r.name||"?",card:r.card||"?",ovr:r.ovr||0,arch:r.arch||rm.sub,start:r.start||0,s:r.s||{}}));
@@ -219,7 +225,10 @@ export default function App(){
       }
       await new Promise(r=>setTimeout(r,250));
     }
-    setPlayers(nP);setLr(`${new Date().toLocaleTimeString()} · ${up}/${RM.length} refreshed`);setRfrP("");setRfr(false);
+    setPlayers(nP);
+    const ts=`${new Date().toLocaleTimeString()} · ${up}/${RM.length} refreshed`;
+    setLr(ts);setRfrP("");setRfr(false);
+    try{localStorage.setItem("mut-alpha-players",JSON.stringify(nP));localStorage.setItem("mut-alpha-lr",ts);}catch(e){}
   },[rfr,players]);
 
   const cfg=PC[pos];
