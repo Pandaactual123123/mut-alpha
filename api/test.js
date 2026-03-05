@@ -1,16 +1,8 @@
 export default async function handler(req, res) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) return res.status(200).json({ status: "FAIL", issue: "No API key" });
 
-  // Check 1: Is the API key set?
-  if (!apiKey) {
-    return res.status(200).json({
-      status: "FAIL",
-      issue: "ANTHROPIC_API_KEY is NOT set in Vercel environment variables",
-      fix: "Go to Vercel dashboard → mut-alpha → Settings → Environment Variables → Add ANTHROPIC_API_KEY"
-    });
-  }
-
-  // Check 2: Can we reach Anthropic API?
+  const start = Date.now();
   try {
     const testRes = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
@@ -21,31 +13,31 @@ export default async function handler(req, res) {
       },
       body: JSON.stringify({
         model: "claude-sonnet-4-20250514",
-        max_tokens: 50,
-        messages: [{ role: "user", content: "Say OK" }],
+        max_tokens: 500,
+        system: "You search mut.gg for the best Quarterbacks in Madden 26 MUT. Return ONLY a valid JSON array of the top 2 players. Each object: {\"name\":\"...\",\"ovr\":96,\"s\":{\"SPD\":90}}. No markdown.",
+        messages: [{ role: "user", content: "Search mut.gg for the top 2 QBs in MUT 26. Return JSON array only." }],
+        tools: [{ type: "web_search_20250305", name: "web_search" }],
       }),
     });
 
+    const elapsed = ((Date.now() - start) / 1000).toFixed(1);
     const data = await testRes.json();
 
-    if (testRes.ok) {
-      return res.status(200).json({
-        status: "OK",
-        message: "API key works! Anthropic API responded successfully.",
-        apiStatus: testRes.status
-      });
-    } else {
-      return res.status(200).json({
-        status: "FAIL",
-        issue: "Anthropic API returned an error",
-        apiStatus: testRes.status,
-        error: data
-      });
-    }
+    return res.status(200).json({
+      status: testRes.ok ? "OK" : "FAIL",
+      apiStatus: testRes.status,
+      elapsed: elapsed + "s",
+      responseType: data.type || "unknown",
+      stopReason: data.stop_reason || "none",
+      contentBlocks: data.content ? data.content.length : 0,
+      textPreview: data.content?.filter(b => b.type === "text").map(b => b.text.substring(0, 200)).join(" | ") || "no text",
+      error: data.error || null
+    });
   } catch (err) {
+    const elapsed = ((Date.now() - start) / 1000).toFixed(1);
     return res.status(200).json({
       status: "FAIL",
-      issue: "Could not connect to Anthropic API",
+      elapsed: elapsed + "s",
       error: err.message
     });
   }
