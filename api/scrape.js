@@ -1,5 +1,4 @@
-import chromium from "@sparticuz/chromium";
-import puppeteer from "puppeteer-core";
+import * as cheerio from "cheerio";
 
 const VALID_SLUGS = new Set([
   "qb", "hb", "fb", "wr", "te",
@@ -28,49 +27,27 @@ const STAT_MAP = {
 };
 
 const BROWSER_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36";
-const BROWSER_HEADERS = {
+const HEADERS = {
   "User-Agent": BROWSER_UA,
-  "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+  "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
   "Accept-Language": "en-US,en;q=0.5",
+  "Accept-Encoding": "gzip, deflate, br",
   "Referer": "https://www.google.com/",
   "Cache-Control": "no-cache",
+  "Connection": "keep-alive",
+  "Upgrade-Insecure-Requests": "1",
 };
 
 // In-memory cache: slug -> { data, timestamp }
 const cache = new Map();
 const CACHE_TTL = 60 * 60 * 1000; // 1 hour
 
-// Strategy 0: Try fetching mut.gg with a JSON Accept header or known API paths
-// Many Nuxt/Django sites have an internal API that returns JSON directly
-async function tryJsonApi(slug) {
-  const urls = [
-    `https://www.mut.gg/api/players/best/${slug}/`,
-    `https://www.mut.gg/players/best/${slug}/?format=json`,
-  ];
-  for (const url of urls) {
-    try {
-      const r = await fetch(url, {
-        headers: { ...BROWSER_HEADERS, "Accept": "application/json" },
-      });
-      if (!r.ok) continue;
-      const ct = r.headers.get("content-type") || "";
-      if (!ct.includes("json")) continue;
-      const data = await r.json();
-      // Try to extract player array from common response shapes
-      const arr = data.players || data.results || data.data || (Array.isArray(data) ? data : null);
-      if (arr && Array.isArray(arr) && arr.length > 0) return arr;
-    } catch (e) { /* continue to next URL */ }
-  }
-  return null;
-}
-
-// Normalize a player object from a JSON API response
+// Normalize a player from JSON API response
 function normalizeJsonPlayer(raw, slug) {
   const expectedStats = STAT_MAP[slug] || [];
   const s = {};
   for (const stat of expectedStats) {
     const key = stat.toLowerCase();
-    // Try common field name patterns
     const val = raw[stat] || raw[key] || raw[`stat_${key}`] ||
       (raw.stats && (raw.stats[stat] || raw.stats[key])) ||
       (raw.ratings && (raw.ratings[stat] || raw.ratings[key]));
@@ -85,6 +62,302 @@ function normalizeJsonPlayer(raw, slug) {
     bnd: !!(raw.bnd || raw.nat || raw.is_nat),
     s,
   };
+}
+
+// Strategy 1: Try JSON API endpoints
+async function tryJsonApi(slug) {
+  const urls = [
+    `https://www.mut.gg/api/players/best/${slug}/`,
+    `https://www.mut.gg/players/best/${slug}/?format=json`,
+  ];
+  for (const url of urls) {
+    try {
+      const r = await fetch(url, {
+        headers: { ...HEADERS, "Accept": "application/json" },
+      });
+      if (!r.ok) continue;
+      const ct = r.headers.get("content-type") || "";
+      if (!ct.includes("json")) continue;
+      const data = await r.json();
+      const arr = data.players || data.results || data.data || (Array.isArray(data) ? data : null);
+      if (arr && Array.isArray(arr) && arr.length > 0) return arr;
+    } catch (e) { /* continue */ }
+  }
+  return null;
+}
+
+// Strategy 2: Fetch HTML and parse with cheerio
+async function tryHtmlScrape(slug) {
+  const url = `https://www.mut.gg/players/best/${slug}/?max_ratings=on`;
+  const r = await fetch(url, { headers: HEADERS });
+  if (!r.ok) {
+    return { error: `mut.gg returned ${r.status}`, html: null };
+  }
+  const html = await r.text();
+  return { error: null, html };
+}
+
+// Parse HTML for embedded JSON (__NUXT__, __NEXT_DATA__)
+function tryExtractEmbeddedJson(html) {
+  // Look for __NEXT_DATA__
+  const nextMatch = html.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/);
+  if (nextMatch) {
+    try {
+      const data = JSON.parse(nextMatch[1]);
+      const found = findPlayerArray(data, 0);
+      if (found) return found;
+    } catch (e) { /* continue */ }
+  }
+
+  // Look for __NUXT__ payload
+  const nuxtMatch = html.match(/window\.__NUXT__\s*=\s*(\{[\s\S]*?\})\s*;?\s*<\/script>/);
+  if (nuxtMatch) {
+    try {
+      const data = JSON.parse(nuxtMatch[1]);
+      const found = findPlayerArray(data, 0);
+      if (found) return found;
+    } catch (e) { /* continue */ }
+  }
+
+  // Look for inline JSON with player data
+  const inlineMatch = html.match(/\[[\s\S]{50,5000}?"name"[\s\S]*?"ovr"[\s\S]*?\]/);
+  if (inlineMatch) {
+    try {
+      const arr = JSON.parse(inlineMatch[0]);
+      if (Array.isArray(arr) && arr.length > 0) return arr;
+    } catch (e) { /* continue */ }
+  }
+
+  return null;
+}
+
+// Recursively find an array of player-like objects in a JSON tree
+function findPlayerArray(obj, depth) {
+  if (depth > 8 || !obj) return null;
+  if (Array.isArray(obj) && obj.length > 0 && obj[0] &&
+      (obj[0].name || obj[0].full_name || obj[0].player_name) &&
+      (obj[0].ovr || obj[0].overall || obj[0].rating)) {
+    return obj;
+  }
+  if (typeof obj === "object") {
+    for (const key of Object.keys(obj)) {
+      const found = findPlayerArray(obj[key], depth + 1);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+// Parse HTML with cheerio for DOM-based player extraction
+function parsePlayersFromHtml(html, slug) {
+  const $ = cheerio.load(html);
+  const expectedStats = STAT_MAP[slug] || [];
+  const results = [];
+
+  function clean(text) {
+    return (text || "").trim().replace(/\s+/g, " ");
+  }
+
+  // Strategy A: Table rows
+  $("table tbody tr").each(function (i) {
+    if (results.length >= 5) return false;
+    const $row = $(this);
+    const cells = $row.find("td");
+    if (cells.length < 3) return;
+
+    const allText = clean($row.text());
+
+    let ovr = 0;
+    const $ovr = $row.find("[class*='ovr'], [class*='overall'], [class*='rating']").first();
+    if ($ovr.length) {
+      ovr = parseInt(clean($ovr.text())) || 0;
+    } else {
+      cells.each(function (ci) {
+        if (ci >= 3 || ovr) return;
+        const n = parseInt(clean($(this).text()));
+        if (n >= 80 && n <= 99) ovr = n;
+      });
+    }
+
+    let name = "";
+    const $nameLink = $row.find("a[href*='/player/'], a[href*='/players/']").first();
+    if ($nameLink.length) name = clean($nameLink.text());
+    else {
+      const $nameEl = $row.find("[class*='name'], [class*='player']").first();
+      if ($nameEl.length) name = clean($nameEl.text());
+    }
+
+    let card = "";
+    const $card = $row.find("[class*='program'], [class*='promo'], [class*='set']").first();
+    if ($card.length) card = clean($card.text());
+
+    let arch = "";
+    const $arch = $row.find("[class*='archetype'], [class*='arch']").first();
+    if ($arch.length) arch = clean($arch.text());
+
+    let start = 0;
+    const startMatch = allText.match(/(\d+\.?\d*)%/);
+    if (startMatch) start = parseFloat(startMatch[1]);
+
+    const bnd = allText.includes("BND") || allText.includes("NAT");
+
+    const s = {};
+    const statValues = [];
+    $row.find("[class*='stat'], td").each(function () {
+      const n = parseInt(clean($(this).text()));
+      if (n >= 50 && n <= 99) statValues.push(n);
+    });
+    for (let si = 0; si < expectedStats.length && si < statValues.length; si++) {
+      s[expectedStats[si]] = statValues[si];
+    }
+
+    if (name || ovr) {
+      results.push({ name: name || "Unknown", card, ovr, arch, start, bnd, s });
+    }
+  });
+
+  // Strategy B: Card/div-based layout
+  if (results.length === 0) {
+    const cardSelectors = [
+      "[class*='player-card']", "[class*='player-item']", "[class*='player-row']",
+      "[class*='best-player']", "[class*='PlayerCard']", "[class*='PlayerItem']",
+      "[class*='leaderboard'] [class*='item']", "[class*='ranking'] [class*='item']",
+    ];
+
+    let $cards = $();
+    for (const sel of cardSelectors) {
+      $cards = $(sel);
+      if ($cards.length >= 1) break;
+    }
+
+    $cards.each(function (i) {
+      if (results.length >= 5) return false;
+      const $card = $(this);
+      const allText = clean($card.text());
+
+      let ovr = 0;
+      const $ovr = $card.find("[class*='ovr'], [class*='overall'], [class*='rating']").first();
+      if ($ovr.length) ovr = parseInt(clean($ovr.text())) || 0;
+
+      let name = "";
+      const $name = $card.find("[class*='name'], a[href*='/player']").first();
+      if ($name.length) name = clean($name.text());
+
+      let cardName = "";
+      const $prog = $card.find("[class*='program'], [class*='promo'], [class*='set']").first();
+      if ($prog.length) cardName = clean($prog.text());
+
+      let arch = "";
+      const $arch = $card.find("[class*='archetype'], [class*='arch']").first();
+      if ($arch.length) arch = clean($arch.text());
+
+      let start = 0;
+      const startMatch = allText.match(/(\d+\.?\d*)%/);
+      if (startMatch) start = parseFloat(startMatch[1]);
+
+      const bnd = allText.includes("BND") || allText.includes("NAT");
+
+      const s = {};
+      const statValues = [];
+      $card.find("[class*='stat'] [class*='value'], [class*='stat-val']").each(function () {
+        const n = parseInt(clean($(this).text()));
+        if (n >= 50 && n <= 99) statValues.push(n);
+      });
+      for (let si = 0; si < expectedStats.length && si < statValues.length; si++) {
+        s[expectedStats[si]] = statValues[si];
+      }
+
+      if (name || ovr) {
+        results.push({ name: name || "Unknown", card: cardName, ovr, arch, start, bnd, s });
+      }
+    });
+  }
+
+  // Strategy C: Link-based fallback
+  if (results.length === 0) {
+    const seen = new Set();
+    $("a[href*='/player']").each(function () {
+      if (results.length >= 5) return false;
+      const name = clean($(this).text());
+      if (!name || name.length < 3 || name.length > 40 || seen.has(name)) return;
+      seen.add(name);
+
+      const $container = $(this).closest("tr, [class*='card'], [class*='item'], [class*='row'], div");
+      if (!$container.length) return;
+
+      const allText = clean($container.text());
+      let ovr = 0;
+      const ovrMatch = allText.match(/\b(8\d|9\d)\b/);
+      if (ovrMatch) ovr = parseInt(ovrMatch[0]);
+
+      let start = 0;
+      const startMatch = allText.match(/(\d+\.?\d*)%/);
+      if (startMatch) start = parseFloat(startMatch[1]);
+
+      const bnd = allText.includes("BND") || allText.includes("NAT");
+
+      results.push({ name, card: "", ovr, arch: "", start, bnd, s: {} });
+    });
+  }
+
+  return results;
+}
+
+// Strategy 3: Puppeteer fallback (lazy-loaded to avoid import errors if not needed)
+async function tryPuppeteer(slug) {
+  let chromium, puppeteer;
+  try {
+    chromium = (await import("@sparticuz/chromium")).default;
+    puppeteer = (await import("puppeteer-core")).default;
+  } catch (e) {
+    return { error: `Failed to load Puppeteer/Chromium: ${e.message}`, players: [] };
+  }
+
+  let browser = null;
+  try {
+    const executablePath = await chromium.executablePath();
+    browser = await puppeteer.launch({
+      args: chromium.args,
+      defaultViewport: chromium.defaultViewport,
+      executablePath,
+      headless: "shell",
+    });
+
+    const page = await browser.newPage();
+    await page.setUserAgent(BROWSER_UA);
+
+    const url = `https://www.mut.gg/players/best/${slug}/?max_ratings=on`;
+    await page.goto(url, { waitUntil: "networkidle2", timeout: 20000 });
+    await new Promise(r => setTimeout(r, 2000));
+
+    // Get the rendered HTML and parse with cheerio
+    const html = await page.content();
+    const expectedStats = STAT_MAP[slug] || [];
+
+    // Try embedded JSON first
+    const jsonPlayers = tryExtractEmbeddedJson(html);
+    if (jsonPlayers) {
+      return { error: null, players: jsonPlayers.slice(0, 5).map(p => normalizeJsonPlayer(p, slug)) };
+    }
+
+    // Parse rendered DOM with cheerio
+    const players = parsePlayersFromHtml(html, slug);
+    if (players.length > 0) {
+      return { error: null, players };
+    }
+
+    // Debug: capture page info
+    const $ = cheerio.load(html);
+    const debug = {
+      title: $("title").text(),
+      bodyClasses: $("body").attr("class") || "",
+      htmlLength: html.length,
+      sampleClasses: [...new Set($("[class]").map((i, el) => $(el).attr("class")).get())].slice(0, 30),
+    };
+    return { error: "Could not parse players from rendered page", players: [], debug };
+  } finally {
+    if (browser) await browser.close().catch(() => {});
+  }
 }
 
 export default async function handler(req, res) {
@@ -103,330 +376,70 @@ export default async function handler(req, res) {
     return res.status(200).json({ ...cached.data, cached: true });
   }
 
-  const expectedStats = STAT_MAP[slug] || [];
+  const strategies = [];
 
-  // Strategy 0: Try JSON API first (fastest, no browser needed)
+  // Strategy 1: Try JSON API
   try {
     const jsonPlayers = await tryJsonApi(slug);
     if (jsonPlayers) {
       const players = jsonPlayers.slice(0, 5).map(p => normalizeJsonPlayer(p, slug));
-      const result = { position: slug, updated: new Date().toISOString(), players, error: null };
+      const result = { position: slug, updated: new Date().toISOString(), players, error: null, strategy: "json-api" };
       cache.set(slug, { data: result, timestamp: Date.now() });
       return res.status(200).json(result);
     }
-  } catch (e) { /* fall through to Puppeteer */ }
-
-  // Strategy 1+: Use Puppeteer to render the page and extract data
-  let browser = null;
-  try {
-    browser = await puppeteer.launch({
-      args: chromium.args,
-      defaultViewport: chromium.defaultViewport,
-      executablePath: await chromium.executablePath(),
-      headless: chromium.headless,
-    });
-
-    const page = await browser.newPage();
-    await page.setUserAgent(BROWSER_UA);
-
-    // Use max_ratings=on to get fully boosted stats
-    const url = `https://www.mut.gg/players/best/${slug}/?max_ratings=on`;
-    await page.goto(url, { waitUntil: "networkidle2", timeout: 20000 });
-
-    // Wait for JS rendering
-    await new Promise(r => setTimeout(r, 2000));
-
-    // Extract player data from the rendered page
-    const players = await page.evaluate((expectedStats) => {
-      const results = [];
-
-      function clean(text) {
-        return (text || "").trim().replace(/\s+/g, " ");
-      }
-
-      // Sub-strategy A: Try to find embedded JSON data (__NUXT__, __NEXT_DATA__, inline scripts)
-      const scripts = document.querySelectorAll("script");
-      for (const script of scripts) {
-        const text = script.textContent || "";
-        // Look for __NUXT__ payload
-        if (text.includes("__NUXT__") || text.includes("__NEXT_DATA__")) {
-          try {
-            let jsonStr = "";
-            if (text.includes("__NEXT_DATA__")) {
-              jsonStr = text;
-            } else {
-              // Nuxt: window.__NUXT__= or __NUXT__=
-              const match = text.match(/__NUXT__\s*=\s*(\{[\s\S]*\})\s*;?\s*$/);
-              if (match) jsonStr = match[1];
-            }
-            if (jsonStr) {
-              // Try to find player data in the JSON
-              const findPlayers = (obj, depth) => {
-                if (depth > 8 || !obj) return null;
-                if (Array.isArray(obj) && obj.length > 0 && obj[0] && (obj[0].name || obj[0].full_name) && (obj[0].ovr || obj[0].overall)) {
-                  return obj;
-                }
-                if (typeof obj === "object") {
-                  for (const key of Object.keys(obj)) {
-                    const found = findPlayers(obj[key], depth + 1);
-                    if (found) return found;
-                  }
-                }
-                return null;
-              };
-              const parsed = JSON.parse(jsonStr);
-              const found = findPlayers(parsed, 0);
-              if (found && found.length > 0) {
-                return { __jsonData: found };
-              }
-            }
-          } catch (e) { /* parsing failed, continue */ }
-        }
-
-        // Look for inline JSON arrays containing player-like objects
-        if (text.includes("starting") && text.includes("ovr")) {
-          try {
-            const arrMatch = text.match(/\[[\s\S]*?"name"[\s\S]*?"ovr"[\s\S]*?\]/);
-            if (arrMatch) {
-              const arr = JSON.parse(arrMatch[0]);
-              if (Array.isArray(arr) && arr.length > 0) return { __jsonData: arr };
-            }
-          } catch (e) { /* continue */ }
-        }
-      }
-
-      // Also check for __NEXT_DATA__ script tag by ID
-      const nextData = document.getElementById("__NEXT_DATA__");
-      if (nextData) {
-        try {
-          const parsed = JSON.parse(nextData.textContent);
-          const findPlayers = (obj, depth) => {
-            if (depth > 8 || !obj) return null;
-            if (Array.isArray(obj) && obj.length > 0 && obj[0] && (obj[0].name || obj[0].full_name) && (obj[0].ovr || obj[0].overall)) {
-              return obj;
-            }
-            if (typeof obj === "object") {
-              for (const key of Object.keys(obj)) {
-                const found = findPlayers(obj[key], depth + 1);
-                if (found) return found;
-              }
-            }
-            return null;
-          };
-          const found = findPlayers(parsed, 0);
-          if (found && found.length > 0) return { __jsonData: found };
-        } catch (e) { /* continue */ }
-      }
-
-      // Sub-strategy B: Table-based DOM parsing
-      let playerElements = document.querySelectorAll("table tbody tr");
-
-      if (playerElements.length >= 1) {
-        for (let i = 0; i < Math.min(playerElements.length, 5); i++) {
-          const row = playerElements[i];
-          const cells = row.querySelectorAll("td");
-          if (cells.length < 3) continue;
-
-          const allText = clean(row.textContent);
-
-          let ovr = 0;
-          const ovrEl = row.querySelector("[class*='ovr'], [class*='overall'], [class*='rating']");
-          if (ovrEl) {
-            ovr = parseInt(clean(ovrEl.textContent)) || 0;
-          } else {
-            for (let c = 0; c < Math.min(cells.length, 3); c++) {
-              const n = parseInt(clean(cells[c].textContent));
-              if (n >= 80 && n <= 99) { ovr = n; break; }
-            }
-          }
-
-          let name = "";
-          const nameLink = row.querySelector("a[href*='/player/'], a[href*='/players/']");
-          if (nameLink) {
-            name = clean(nameLink.textContent);
-          } else {
-            const nameEl = row.querySelector("[class*='name'], [class*='player']");
-            if (nameEl) name = clean(nameEl.textContent);
-          }
-
-          let card = "";
-          const cardEl = row.querySelector("[class*='program'], [class*='promo'], [class*='set']");
-          if (cardEl) card = clean(cardEl.textContent);
-
-          let arch = "";
-          const archEl = row.querySelector("[class*='archetype'], [class*='arch']");
-          if (archEl) arch = clean(archEl.textContent);
-
-          let start = 0;
-          const startMatch = allText.match(/(\d+\.?\d*)%/);
-          if (startMatch) start = parseFloat(startMatch[1]);
-
-          const bnd = allText.includes("BND") || allText.includes("NAT");
-
-          const s = {};
-          const statEls = row.querySelectorAll("[class*='stat'], [class*='attribute'] .value, td:not(:first-child)");
-          const statValues = [];
-          statEls.forEach(el => {
-            const n = parseInt(clean(el.textContent));
-            if (n >= 50 && n <= 99) statValues.push(n);
-          });
-          for (let si = 0; si < expectedStats.length && si < statValues.length; si++) {
-            s[expectedStats[si]] = statValues[si];
-          }
-
-          if (name || ovr) {
-            results.push({ name: name || "Unknown", card, ovr, arch, start, bnd, s });
-          }
-        }
-      }
-
-      // Sub-strategy C: Card/div-based layout
-      if (results.length === 0) {
-        const cardSelectors = [
-          "[class*='player-card']", "[class*='player-item']", "[class*='player-row']",
-          "[class*='best-player']", "[class*='PlayerCard']", "[class*='PlayerItem']",
-          ".card", ".item", ".player",
-          "[class*='leaderboard'] [class*='item']", "[class*='ranking'] [class*='item']",
-        ];
-
-        let cards = [];
-        for (const sel of cardSelectors) {
-          cards = document.querySelectorAll(sel);
-          if (cards.length >= 1) break;
-        }
-
-        for (let i = 0; i < Math.min(cards.length, 5); i++) {
-          const card = cards[i];
-          const allText = clean(card.textContent);
-
-          let ovr = 0;
-          const ovrEl = card.querySelector("[class*='ovr'], [class*='overall'], [class*='rating']");
-          if (ovrEl) ovr = parseInt(clean(ovrEl.textContent)) || 0;
-
-          let name = "";
-          const nameEl = card.querySelector("[class*='name'], a[href*='/player']");
-          if (nameEl) name = clean(nameEl.textContent);
-
-          let cardName = "";
-          const progEl = card.querySelector("[class*='program'], [class*='promo'], [class*='set'], [class*='card-type']");
-          if (progEl) cardName = clean(progEl.textContent);
-
-          let arch = "";
-          const archEl = card.querySelector("[class*='archetype'], [class*='arch'], [class*='position-type']");
-          if (archEl) arch = clean(archEl.textContent);
-
-          let start = 0;
-          const startMatch = allText.match(/(\d+\.?\d*)%/);
-          if (startMatch) start = parseFloat(startMatch[1]);
-
-          const bnd = allText.includes("BND") || allText.includes("NAT");
-
-          const s = {};
-          const statValues = [];
-          const statEls = card.querySelectorAll("[class*='stat'] [class*='value'], [class*='stat-val'], [class*='attribute-value']");
-          statEls.forEach(el => {
-            const n = parseInt(clean(el.textContent));
-            if (n >= 50 && n <= 99) statValues.push(n);
-          });
-          for (let si = 0; si < expectedStats.length && si < statValues.length; si++) {
-            s[expectedStats[si]] = statValues[si];
-          }
-
-          if (name || ovr) {
-            results.push({ name: name || "Unknown", card: cardName, ovr, arch, start, bnd, s });
-          }
-        }
-      }
-
-      // Sub-strategy D: Generic link-based fallback
-      if (results.length === 0) {
-        const links = document.querySelectorAll("a[href*='/player']");
-        const seen = new Set();
-        for (let i = 0; i < links.length && results.length < 5; i++) {
-          const link = links[i];
-          const name = clean(link.textContent);
-          if (!name || name.length < 3 || name.length > 40 || seen.has(name)) continue;
-          seen.add(name);
-
-          let container = link.closest("tr, [class*='card'], [class*='item'], [class*='row'], div");
-          if (!container) continue;
-
-          const allText = clean(container.textContent);
-          let ovr = 0;
-          const ovrMatch = allText.match(/\b(8\d|9\d)\b/);
-          if (ovrMatch) ovr = parseInt(ovrMatch[0]);
-
-          let start = 0;
-          const startMatch = allText.match(/(\d+\.?\d*)%/);
-          if (startMatch) start = parseFloat(startMatch[1]);
-
-          const bnd = allText.includes("BND") || allText.includes("NAT");
-
-          results.push({ name, card: "", ovr, arch: "", start, bnd, s: {} });
-        }
-      }
-
-      // If still nothing, capture page structure for debugging
-      if (results.length === 0) {
-        const body = document.body;
-        const debug = {
-          title: document.title,
-          url: window.location.href,
-          bodyClasses: body.className,
-          childTags: [...body.children].slice(0, 10).map(el => ({
-            tag: el.tagName,
-            className: el.className,
-            id: el.id,
-            childCount: el.children.length,
-            textPreview: el.textContent.substring(0, 300),
-          })),
-          allClassNames: [...new Set([...document.querySelectorAll("[class]")].map(el => el.className).filter(c => c))].slice(0, 50),
-        };
-        return { __debug: debug };
-      }
-
-      return results;
-    }, expectedStats);
-
-    // Handle embedded JSON data found via script tags
-    if (players.__jsonData) {
-      const normalized = players.__jsonData.slice(0, 5).map(p => normalizeJsonPlayer(p, slug));
-      const result = { position: slug, updated: new Date().toISOString(), players: normalized, error: null };
-      cache.set(slug, { data: result, timestamp: Date.now() });
-      return res.status(200).json(result);
-    }
-
-    // Handle debug output (page structure didn't match any strategy)
-    if (players.__debug) {
-      return res.status(200).json({
-        position: slug,
-        updated: new Date().toISOString(),
-        players: [],
-        error: "Could not parse player data from mut.gg. Page structure may have changed.",
-        debug: players.__debug,
-      });
-    }
-
-    const result = {
-      position: slug,
-      updated: new Date().toISOString(),
-      players: Array.isArray(players) ? players.slice(0, 5) : [],
-      error: null,
-    };
-
-    cache.set(slug, { data: result, timestamp: Date.now() });
-    return res.status(200).json(result);
-  } catch (err) {
-    return res.status(500).json({
-      position: slug,
-      updated: new Date().toISOString(),
-      players: [],
-      error: `Scrape failed: ${err.message}`,
-    });
-  } finally {
-    if (browser) {
-      await browser.close().catch(() => {});
-    }
+    strategies.push("json-api: no data");
+  } catch (e) {
+    strategies.push(`json-api: ${e.message}`);
   }
-}
 
+  // Strategy 2: Fetch HTML directly + cheerio
+  try {
+    const { error, html } = await tryHtmlScrape(slug);
+    if (html) {
+      // Try embedded JSON in the HTML
+      const jsonPlayers = tryExtractEmbeddedJson(html);
+      if (jsonPlayers) {
+        const players = jsonPlayers.slice(0, 5).map(p => normalizeJsonPlayer(p, slug));
+        const result = { position: slug, updated: new Date().toISOString(), players, error: null, strategy: "embedded-json" };
+        cache.set(slug, { data: result, timestamp: Date.now() });
+        return res.status(200).json(result);
+      }
+
+      // Parse HTML with cheerio
+      const players = parsePlayersFromHtml(html, slug);
+      if (players.length > 0) {
+        const result = { position: slug, updated: new Date().toISOString(), players: players.slice(0, 5), error: null, strategy: "cheerio" };
+        cache.set(slug, { data: result, timestamp: Date.now() });
+        return res.status(200).json(result);
+      }
+      strategies.push("html: fetched but no players parsed");
+    } else {
+      strategies.push(`html: ${error}`);
+    }
+  } catch (e) {
+    strategies.push(`html: ${e.message}`);
+  }
+
+  // Strategy 3: Puppeteer (heavy, last resort)
+  try {
+    const { error, players, debug } = await tryPuppeteer(slug);
+    if (players && players.length > 0) {
+      const result = { position: slug, updated: new Date().toISOString(), players: players.slice(0, 5), error: null, strategy: "puppeteer" };
+      cache.set(slug, { data: result, timestamp: Date.now() });
+      return res.status(200).json(result);
+    }
+    strategies.push(`puppeteer: ${error || "no players"}`);
+    if (debug) strategies.push(`debug: ${JSON.stringify(debug)}`);
+  } catch (e) {
+    strategies.push(`puppeteer: ${e.message}`);
+  }
+
+  // All strategies failed
+  return res.status(200).json({
+    position: slug,
+    updated: new Date().toISOString(),
+    players: [],
+    error: "All scraping strategies failed",
+    strategies,
+  });
+}
