@@ -273,13 +273,20 @@ function parsePlayersFromHtml(html, slug) {
     });
   }
 
-  // Strategy C: Link-based fallback
+  // Strategy C: Link-based fallback (only match player-specific links, not nav)
   if (results.length === 0) {
     const seen = new Set();
-    $("a[href*='/player']").each(function () {
+    const NAV_WORDS = new Set(["players","stats","leaderboard","best","mut","madden","weekly","spotlight","token","home","news","sets","abilities","search","login","sign"]);
+    $("a[href*='/players/']").each(function () {
       if (results.length >= 5) return false;
+      const href = $(this).attr("href") || "";
+      // Only match links that look like individual player pages (with an ID or slug after /players/)
+      if (!href.match(/\/players?\/\d+/) && !href.match(/\/players?\/[a-z]+-[a-z]+/i)) return;
       const name = clean($(this).text());
       if (!name || name.length < 3 || name.length > 40 || seen.has(name)) return;
+      // Skip nav-like text
+      if (NAV_WORDS.has(name.toLowerCase().split(" ")[0].toLowerCase())) return;
+      if (name.split(" ").length < 2) return; // Player names have first + last
       seen.add(name);
 
       const $container = $(this).closest("tr, [class*='card'], [class*='item'], [class*='row'], div");
@@ -362,6 +369,7 @@ async function tryPuppeteer(slug) {
 
 export default async function handler(req, res) {
   const slug = (req.query.pos || "").toLowerCase();
+  const debug = req.query.debug === "1";
 
   if (!VALID_SLUGS.has(slug)) {
     return res.status(400).json({
@@ -407,12 +415,20 @@ export default async function handler(req, res) {
 
       // Parse HTML with cheerio
       const players = parsePlayersFromHtml(html, slug);
-      if (players.length > 0) {
-        const result = { position: slug, updated: new Date().toISOString(), players: players.slice(0, 5), error: null, strategy: "cheerio" };
+      const validPlayers = players.filter(p => p.ovr >= 80 || Object.keys(p.s).length > 0);
+      if (validPlayers.length > 0) {
+        const result = { position: slug, updated: new Date().toISOString(), players: validPlayers.slice(0, 5), error: null, strategy: "cheerio" };
         cache.set(slug, { data: result, timestamp: Date.now() });
         return res.status(200).json(result);
       }
-      strategies.push("html: fetched but no players parsed");
+      const debugInfo = debug ? {
+        htmlLength: html.length,
+        title: html.match(/<title>(.*?)<\/title>/)?.[1] || "",
+        htmlSnippet: html.substring(0, 2000),
+        candidatePlayers: players,
+      } : undefined;
+      strategies.push(`html: fetched (${html.length} bytes) but no valid players parsed (${players.length} candidates rejected)`);
+      if (debug && debugInfo) strategies.push(debugInfo);
     } else {
       strategies.push(`html: ${error}`);
     }
