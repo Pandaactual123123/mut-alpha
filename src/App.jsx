@@ -612,7 +612,7 @@ export default function App(){
       } else {
         setRLog(prev=>prev.map((e,idx)=>idx===i?{...e,status:"fail"}:e));
       }
-      await new Promise(r=>setTimeout(r,250));
+      await new Promise(r=>setTimeout(r,3000));
     }
     setPlayers(nP);setRCount(c=>c+1);setLr(`${new Date().toLocaleTimeString()} · ${up}/${RM.length} refreshed`);setRfrP("");setRfr(false);
   },[rfr,players]);

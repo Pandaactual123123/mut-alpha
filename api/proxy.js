@@ -44,81 +44,102 @@ CRITICAL RULES:
 
 REMEMBER: Output ONLY the JSON array. Nothing else. No text before or after.`;
 
-  try {
-    const anthropicRes = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
+  const body = JSON.stringify({
+    model: "claude-sonnet-4-20250514",
+    max_tokens: 2000,
+    system: sys,
+    messages: [
+      {
+        role: "user",
+        content: `Search mut.gg for the current top 5 best ${label} in MUT 26 by starting percentage. After searching, respond with ONLY a raw JSON array. No explanation.`,
       },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-20250514",
-        max_tokens: 2000,
-        system: sys,
-        messages: [
-          {
-            role: "user",
-            content: `Search mut.gg for the current top 5 best ${label} in MUT 26 by starting percentage. After searching, respond with ONLY a raw JSON array. No explanation.`,
-          },
-        ],
-        tools: [{ type: "web_search_20250305", name: "web_search" }],
-      }),
-    });
+    ],
+    tools: [{ type: "web_search_20250305", name: "web_search" }],
+  });
 
-    if (!anthropicRes.ok) {
-      const errData = await anthropicRes.json();
-      return res.status(anthropicRes.status).json({ error: "Anthropic API error", detail: errData });
-    }
+  const headers = {
+    "Content-Type": "application/json",
+    "x-api-key": apiKey,
+    "anthropic-version": "2023-06-01",
+  };
 
-    const data = await anthropicRes.json();
-
-    // Extract all text blocks from the response
-    const textBlocks = (data.content || [])
-      .filter(b => b.type === "text")
-      .map(b => b.text)
-      .join("\n");
-
-    // Try to extract a JSON array from the text
-    let players = null;
-
-    // Method 1: Try parsing the whole text directly
+  // Retry up to 3 times with increasing delays for rate limits
+  let lastErr = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      const cleaned = textBlocks.replace(/```json|```/g, "").trim();
-      const parsed = JSON.parse(cleaned);
-      if (Array.isArray(parsed) && parsed.length > 0) players = parsed;
-    } catch (_) {}
-
-    // Method 2: Find JSON array pattern in the text
-    if (!players) {
-      const match = textBlocks.match(/\[[\s\S]*\]/);
-      if (match) {
-        try {
-          const parsed = JSON.parse(match[0]);
-          if (Array.isArray(parsed) && parsed.length > 0) players = parsed;
-        } catch (_) {}
+      // Wait before retry (0s first attempt, 5s second, 15s third)
+      if (attempt > 0) {
+        await new Promise(r => setTimeout(r, attempt * 5000 + 5000));
       }
-    }
 
-    if (players) {
-      // Return clean response in the format the app expects
-      return res.status(200).json({
-        content: [{ type: "text", text: JSON.stringify(players) }]
+      const anthropicRes = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers,
+        body,
       });
-    }
 
-    // If we couldn't extract JSON, return the raw response for debugging
-    return res.status(200).json({
-      content: [{ type: "text", text: "[]" }],
-      _debug: {
-        rawText: textBlocks.substring(0, 500),
-        blockCount: (data.content || []).length,
-        stopReason: data.stop_reason
+      // If rate limited, retry
+      if (anthropicRes.status === 429) {
+        lastErr = `Rate limited (attempt ${attempt + 1}/3)`;
+        continue;
       }
-    });
 
-  } catch (err) {
-    console.error("Proxy error:", err);
-    return res.status(500).json({ error: "Proxy request failed.", detail: err.message });
+      if (!anthropicRes.ok) {
+        const errData = await anthropicRes.json();
+        return res.status(200).json({
+          content: [{ type: "text", text: "[]" }],
+          _error: { status: anthropicRes.status, detail: errData }
+        });
+      }
+
+      const data = await anthropicRes.json();
+
+      // Extract all text blocks from the response
+      const textBlocks = (data.content || [])
+        .filter(b => b.type === "text")
+        .map(b => b.text)
+        .join("\n");
+
+      // Try to extract a JSON array from the text
+      let players = null;
+
+      // Method 1: Try parsing the whole text directly
+      try {
+        const cleaned = textBlocks.replace(/```json|```/g, "").trim();
+        const parsed = JSON.parse(cleaned);
+        if (Array.isArray(parsed) && parsed.length > 0) players = parsed;
+      } catch (_) {}
+
+      // Method 2: Find JSON array pattern in the text
+      if (!players) {
+        const match = textBlocks.match(/\[[\s\S]*\]/);
+        if (match) {
+          try {
+            const parsed = JSON.parse(match[0]);
+            if (Array.isArray(parsed) && parsed.length > 0) players = parsed;
+          } catch (_) {}
+        }
+      }
+
+      if (players) {
+        return res.status(200).json({
+          content: [{ type: "text", text: JSON.stringify(players) }]
+        });
+      }
+
+      // Return empty if no valid JSON found
+      return res.status(200).json({
+        content: [{ type: "text", text: "[]" }]
+      });
+
+    } catch (err) {
+      lastErr = err.message;
+    }
   }
+
+  // All retries exhausted
+  return res.status(200).json({
+    content: [{ type: "text", text: "[]" }],
+    _error: lastErr
+  });
 }
