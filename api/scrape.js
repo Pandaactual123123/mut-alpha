@@ -27,9 +27,65 @@ const STAT_MAP = {
   ss: ["SPD", "TAK", "POW", "MCV", "ZCV"],
 };
 
+const BROWSER_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36";
+const BROWSER_HEADERS = {
+  "User-Agent": BROWSER_UA,
+  "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+  "Accept-Language": "en-US,en;q=0.5",
+  "Referer": "https://www.google.com/",
+  "Cache-Control": "no-cache",
+};
+
 // In-memory cache: slug -> { data, timestamp }
 const cache = new Map();
 const CACHE_TTL = 60 * 60 * 1000; // 1 hour
+
+// Strategy 0: Try fetching mut.gg with a JSON Accept header or known API paths
+// Many Nuxt/Django sites have an internal API that returns JSON directly
+async function tryJsonApi(slug) {
+  const urls = [
+    `https://www.mut.gg/api/players/best/${slug}/`,
+    `https://www.mut.gg/players/best/${slug}/?format=json`,
+  ];
+  for (const url of urls) {
+    try {
+      const r = await fetch(url, {
+        headers: { ...BROWSER_HEADERS, "Accept": "application/json" },
+      });
+      if (!r.ok) continue;
+      const ct = r.headers.get("content-type") || "";
+      if (!ct.includes("json")) continue;
+      const data = await r.json();
+      // Try to extract player array from common response shapes
+      const arr = data.players || data.results || data.data || (Array.isArray(data) ? data : null);
+      if (arr && Array.isArray(arr) && arr.length > 0) return arr;
+    } catch (e) { /* continue to next URL */ }
+  }
+  return null;
+}
+
+// Normalize a player object from a JSON API response
+function normalizeJsonPlayer(raw, slug) {
+  const expectedStats = STAT_MAP[slug] || [];
+  const s = {};
+  for (const stat of expectedStats) {
+    const key = stat.toLowerCase();
+    // Try common field name patterns
+    const val = raw[stat] || raw[key] || raw[`stat_${key}`] ||
+      (raw.stats && (raw.stats[stat] || raw.stats[key])) ||
+      (raw.ratings && (raw.ratings[stat] || raw.ratings[key]));
+    if (val != null) s[stat] = parseInt(val) || 0;
+  }
+  return {
+    name: raw.name || raw.full_name || raw.player_name || `${raw.first_name || ""} ${raw.last_name || ""}`.trim() || "Unknown",
+    card: raw.card || raw.program || raw.program_name || raw.set_name || "",
+    ovr: parseInt(raw.ovr || raw.overall || raw.rating || 0) || 0,
+    arch: raw.arch || raw.archetype || raw.archetype_name || "",
+    start: parseFloat(raw.start || raw.starting || raw.starting_pct || raw.start_pct || 0) || 0,
+    bnd: !!(raw.bnd || raw.nat || raw.is_nat),
+    s,
+  };
+}
 
 export default async function handler(req, res) {
   const slug = (req.query.pos || "").toLowerCase();
@@ -47,6 +103,20 @@ export default async function handler(req, res) {
     return res.status(200).json({ ...cached.data, cached: true });
   }
 
+  const expectedStats = STAT_MAP[slug] || [];
+
+  // Strategy 0: Try JSON API first (fastest, no browser needed)
+  try {
+    const jsonPlayers = await tryJsonApi(slug);
+    if (jsonPlayers) {
+      const players = jsonPlayers.slice(0, 5).map(p => normalizeJsonPlayer(p, slug));
+      const result = { position: slug, updated: new Date().toISOString(), players, error: null };
+      cache.set(slug, { data: result, timestamp: Date.now() });
+      return res.status(200).json(result);
+    }
+  } catch (e) { /* fall through to Puppeteer */ }
+
+  // Strategy 1+: Use Puppeteer to render the page and extract data
   let browser = null;
   try {
     browser = await puppeteer.launch({
@@ -57,46 +127,101 @@ export default async function handler(req, res) {
     });
 
     const page = await browser.newPage();
+    await page.setUserAgent(BROWSER_UA);
 
-    // Set a realistic user agent
-    await page.setUserAgent(
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36"
-    );
-
-    const url = `https://www.mut.gg/players/best/${slug}/`;
+    // Use max_ratings=on to get fully boosted stats
+    const url = `https://www.mut.gg/players/best/${slug}/?max_ratings=on`;
     await page.goto(url, { waitUntil: "networkidle2", timeout: 20000 });
 
-    // Wait a bit for any late JS rendering
-    await page.waitForTimeout(2000);
-
-    const expectedStats = STAT_MAP[slug] || [];
+    // Wait for JS rendering
+    await new Promise(r => setTimeout(r, 2000));
 
     // Extract player data from the rendered page
     const players = await page.evaluate((expectedStats) => {
       const results = [];
 
-      // Strategy: Look for player card/row elements on the "best players" page.
-      // mut.gg typically shows player items in list/card format.
-      // We'll try multiple selector strategies to find player data.
-
-      // Helper: extract number from text
-      function parseNum(text) {
-        if (!text) return 0;
-        const m = text.match(/[\d.]+/);
-        return m ? parseFloat(m[0]) : 0;
-      }
-
-      // Helper: clean text
       function clean(text) {
         return (text || "").trim().replace(/\s+/g, " ");
       }
 
-      // Strategy 1: Look for common player card patterns
-      // Try table rows first (many sports DB sites use tables)
+      // Sub-strategy A: Try to find embedded JSON data (__NUXT__, __NEXT_DATA__, inline scripts)
+      const scripts = document.querySelectorAll("script");
+      for (const script of scripts) {
+        const text = script.textContent || "";
+        // Look for __NUXT__ payload
+        if (text.includes("__NUXT__") || text.includes("__NEXT_DATA__")) {
+          try {
+            let jsonStr = "";
+            if (text.includes("__NEXT_DATA__")) {
+              jsonStr = text;
+            } else {
+              // Nuxt: window.__NUXT__= or __NUXT__=
+              const match = text.match(/__NUXT__\s*=\s*(\{[\s\S]*\})\s*;?\s*$/);
+              if (match) jsonStr = match[1];
+            }
+            if (jsonStr) {
+              // Try to find player data in the JSON
+              const findPlayers = (obj, depth) => {
+                if (depth > 8 || !obj) return null;
+                if (Array.isArray(obj) && obj.length > 0 && obj[0] && (obj[0].name || obj[0].full_name) && (obj[0].ovr || obj[0].overall)) {
+                  return obj;
+                }
+                if (typeof obj === "object") {
+                  for (const key of Object.keys(obj)) {
+                    const found = findPlayers(obj[key], depth + 1);
+                    if (found) return found;
+                  }
+                }
+                return null;
+              };
+              const parsed = JSON.parse(jsonStr);
+              const found = findPlayers(parsed, 0);
+              if (found && found.length > 0) {
+                return { __jsonData: found };
+              }
+            }
+          } catch (e) { /* parsing failed, continue */ }
+        }
+
+        // Look for inline JSON arrays containing player-like objects
+        if (text.includes("starting") && text.includes("ovr")) {
+          try {
+            const arrMatch = text.match(/\[[\s\S]*?"name"[\s\S]*?"ovr"[\s\S]*?\]/);
+            if (arrMatch) {
+              const arr = JSON.parse(arrMatch[0]);
+              if (Array.isArray(arr) && arr.length > 0) return { __jsonData: arr };
+            }
+          } catch (e) { /* continue */ }
+        }
+      }
+
+      // Also check for __NEXT_DATA__ script tag by ID
+      const nextData = document.getElementById("__NEXT_DATA__");
+      if (nextData) {
+        try {
+          const parsed = JSON.parse(nextData.textContent);
+          const findPlayers = (obj, depth) => {
+            if (depth > 8 || !obj) return null;
+            if (Array.isArray(obj) && obj.length > 0 && obj[0] && (obj[0].name || obj[0].full_name) && (obj[0].ovr || obj[0].overall)) {
+              return obj;
+            }
+            if (typeof obj === "object") {
+              for (const key of Object.keys(obj)) {
+                const found = findPlayers(obj[key], depth + 1);
+                if (found) return found;
+              }
+            }
+            return null;
+          };
+          const found = findPlayers(parsed, 0);
+          if (found && found.length > 0) return { __jsonData: found };
+        } catch (e) { /* continue */ }
+      }
+
+      // Sub-strategy B: Table-based DOM parsing
       let playerElements = document.querySelectorAll("table tbody tr");
 
       if (playerElements.length >= 1) {
-        // Table-based layout
         for (let i = 0; i < Math.min(playerElements.length, 5); i++) {
           const row = playerElements[i];
           const cells = row.querySelectorAll("td");
@@ -104,49 +229,40 @@ export default async function handler(req, res) {
 
           const allText = clean(row.textContent);
 
-          // Try to extract OVR (2-digit number, typically 85-99)
           let ovr = 0;
           const ovrEl = row.querySelector("[class*='ovr'], [class*='overall'], [class*='rating']");
           if (ovrEl) {
             ovr = parseInt(clean(ovrEl.textContent)) || 0;
           } else {
-            // Look for a standalone 2-digit number in early cells
             for (let c = 0; c < Math.min(cells.length, 3); c++) {
               const n = parseInt(clean(cells[c].textContent));
               if (n >= 80 && n <= 99) { ovr = n; break; }
             }
           }
 
-          // Try to find player name via links or specific elements
           let name = "";
           const nameLink = row.querySelector("a[href*='/player/'], a[href*='/players/']");
           if (nameLink) {
             name = clean(nameLink.textContent);
           } else {
-            // Look for the most prominent text element
             const nameEl = row.querySelector("[class*='name'], [class*='player']");
             if (nameEl) name = clean(nameEl.textContent);
           }
 
-          // Program/card name
           let card = "";
           const cardEl = row.querySelector("[class*='program'], [class*='promo'], [class*='set']");
           if (cardEl) card = clean(cardEl.textContent);
 
-          // Archetype
           let arch = "";
           const archEl = row.querySelector("[class*='archetype'], [class*='arch']");
           if (archEl) arch = clean(archEl.textContent);
 
-          // Starting %
           let start = 0;
           const startMatch = allText.match(/(\d+\.?\d*)%/);
           if (startMatch) start = parseFloat(startMatch[1]);
 
-          // BND indicator
           const bnd = allText.includes("BND") || allText.includes("NAT");
 
-          // Stats - look for stat values in order
           const s = {};
           const statEls = row.querySelectorAll("[class*='stat'], [class*='attribute'] .value, td:not(:first-child)");
           const statValues = [];
@@ -154,8 +270,6 @@ export default async function handler(req, res) {
             const n = parseInt(clean(el.textContent));
             if (n >= 50 && n <= 99) statValues.push(n);
           });
-
-          // Map stat values to expected stat names
           for (let si = 0; si < expectedStats.length && si < statValues.length; si++) {
             s[expectedStats[si]] = statValues[si];
           }
@@ -166,9 +280,8 @@ export default async function handler(req, res) {
         }
       }
 
-      // Strategy 2: Card/div-based layout (if table didn't work)
+      // Sub-strategy C: Card/div-based layout
       if (results.length === 0) {
-        // Look for card-like containers
         const cardSelectors = [
           "[class*='player-card']", "[class*='player-item']", "[class*='player-row']",
           "[class*='best-player']", "[class*='PlayerCard']", "[class*='PlayerItem']",
@@ -225,9 +338,8 @@ export default async function handler(req, res) {
         }
       }
 
-      // Strategy 3: Generic fallback — scan for any structured repeating elements
+      // Sub-strategy D: Generic link-based fallback
       if (results.length === 0) {
-        // Get all links that might be player links
         const links = document.querySelectorAll("a[href*='/player']");
         const seen = new Set();
         for (let i = 0; i < links.length && results.length < 5; i++) {
@@ -236,7 +348,6 @@ export default async function handler(req, res) {
           if (!name || name.length < 3 || name.length > 40 || seen.has(name)) continue;
           seen.add(name);
 
-          // Walk up to find the container
           let container = link.closest("tr, [class*='card'], [class*='item'], [class*='row'], div");
           if (!container) continue;
 
@@ -260,14 +371,16 @@ export default async function handler(req, res) {
         const body = document.body;
         const debug = {
           title: document.title,
+          url: window.location.href,
           bodyClasses: body.className,
           childTags: [...body.children].slice(0, 10).map(el => ({
             tag: el.tagName,
             className: el.className,
             id: el.id,
             childCount: el.children.length,
-            textPreview: el.textContent.substring(0, 200),
+            textPreview: el.textContent.substring(0, 300),
           })),
+          allClassNames: [...new Set([...document.querySelectorAll("[class]")].map(el => el.className).filter(c => c))].slice(0, 50),
         };
         return { __debug: debug };
       }
@@ -275,16 +388,23 @@ export default async function handler(req, res) {
       return results;
     }, expectedStats);
 
+    // Handle embedded JSON data found via script tags
+    if (players.__jsonData) {
+      const normalized = players.__jsonData.slice(0, 5).map(p => normalizeJsonPlayer(p, slug));
+      const result = { position: slug, updated: new Date().toISOString(), players: normalized, error: null };
+      cache.set(slug, { data: result, timestamp: Date.now() });
+      return res.status(200).json(result);
+    }
+
     // Handle debug output (page structure didn't match any strategy)
     if (players.__debug) {
-      const result = {
+      return res.status(200).json({
         position: slug,
         updated: new Date().toISOString(),
         players: [],
         error: "Could not parse player data from mut.gg. Page structure may have changed.",
         debug: players.__debug,
-      };
-      return res.status(200).json(result);
+      });
     }
 
     const result = {
@@ -294,9 +414,7 @@ export default async function handler(req, res) {
       error: null,
     };
 
-    // Update cache
     cache.set(slug, { data: result, timestamp: Date.now() });
-
     return res.status(200).json(result);
   } catch (err) {
     return res.status(500).json({
@@ -311,3 +429,4 @@ export default async function handler(req, res) {
     }
   }
 }
+
