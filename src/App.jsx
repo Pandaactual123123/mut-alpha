@@ -163,6 +163,34 @@ async function fetchLive(label,pos,sub){
 
 function fPrice(p){if(!p||p<=0)return null;if(p>=1000000)return(p/1000000).toFixed(2).replace(/\.?0+$/,"")+"M";if(p>=1000)return Math.round(p/1000)+"K";return p.toLocaleString();}
 
+// Persist a piece of state to localStorage so config/thresholds survive reloads
+function useLS(key,init){
+  const[v,setV]=useState(()=>{try{const s=localStorage.getItem(key);return s!=null?JSON.parse(s):init;}catch{return init;}});
+  useEffect(()=>{try{localStorage.setItem(key,JSON.stringify(v));}catch{}},[key,v]);
+  return[v,setV];
+}
+
+// Short beep via WebAudio — used to alert when a fresh snipe appears
+function beep(){try{const Ctx=window.AudioContext||window.webkitAudioContext;if(!Ctx)return;const ctx=new Ctx();const o=ctx.createOscillator(),g=ctx.createGain();o.connect(g);g.connect(ctx.destination);o.type="sine";o.frequency.value=880;g.gain.setValueAtTime(.06,ctx.currentTime);g.gain.exponentialRampToValueAtTime(.0001,ctx.currentTime+.25);o.start();o.stop(ctx.currentTime+.25);setTimeout(()=>ctx.close(),300);}catch{}}
+
+// Read a dotted path out of an arbitrary object — e.g. readPath(json,"data.auctionInfo")
+function readPath(obj,path){if(path==null||path==="")return obj;return String(path).split(".").reduce((o,k)=>(o==null?undefined:o[k]),obj);}
+
+// Format a signed coin amount (handles negatives/zero, which fPrice returns null for)
+function fSigned(n){if(n==null)return"—";const a=Math.abs(n);const f=fPrice(a)??String(a);return(n<0?"−":"+")+f;}
+
+// Parse coin input — accepts 42500, "42500", "42k", "1.2m", "42,500"
+function parseCoins(str){
+  if(typeof str==="number")return Math.round(str);
+  if(!str)return 0;
+  const s=String(str).trim().toLowerCase().replace(/[,\s🪙]/g,"");
+  const m=s.match(/^([\d.]+)([km]?)$/);
+  if(!m)return 0;
+  let n=parseFloat(m[1]);if(isNaN(n))return 0;
+  if(m[2]==="k")n*=1000;else if(m[2]==="m")n*=1000000;
+  return Math.round(n);
+}
+
 function getRelTier(rel){
   const r=(rel||"").toLowerCase().replace(/[\s_-]/g,"");
   if(!r)return null;
@@ -582,12 +610,216 @@ function Bars({pl}){
   </div>);
 }
 
+// EA auction house takes a 10% tax on every sale
+const AH_TAX=0.10;
+
+function SnipePanel({players,search,listed,setListed,mvOv,setMvOv,profitMin,setProfitMin,discountMin,setDiscountMin,matchMode,setMatchMode}){
+  const mono="'Space Mono',monospace";
+  const inp={background:C.bg,border:`1px solid ${C.border}`,borderRadius:4,color:C.t1,fontSize:10,fontFamily:mono,outline:"none",padding:"4px 6px",width:"100%"};
+  const setL=(k,v)=>setListed(p=>({...p,[k]:v}));
+  const setM=(k,v)=>setMvOv(p=>({...p,[k]:v}));
+
+  // --- LIVE FEED (read-only, display only) ---
+  const[feedOpen,setFeedOpen]=useState(false),[feedOn,setFeedOn]=useState(false);
+  const[feedUrl,setFeedUrl]=useLS("mut.feed.url",""),[feedTok,setFeedTok]=useLS("mut.feed.tok",""),[feedBody,setFeedBody]=useLS("mut.feed.body","");
+  const[feedSecs,setFeedSecs]=useLS("mut.feed.secs",5);
+  const[arrPath,setArrPath]=useLS("mut.feed.arrPath",""),[nameKey,setNameKey]=useLS("mut.feed.nameKey",""),[priceKey,setPriceKey]=useLS("mut.feed.priceKey","");
+  const[listings,setListings]=useState([]),[feedStat,setFeedStat]=useState(null);
+  const[soundOn,setSoundOn]=useLS("mut.feed.sound",true);
+  const prevSnipes=useRef(new Set());
+
+  useEffect(()=>{
+    if(!feedOn||!feedUrl)return;
+    let alive=true;
+    const stamp=()=>new Date().toLocaleTimeString("en",{hour12:false});
+    const poll=async()=>{
+      try{
+        const r=await fetch("/api/ah-feed",{method:"POST",headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({endpoint:feedUrl,method:feedBody.trim()?"POST":"GET",token:feedTok,body:feedBody.trim()||undefined})});
+        const j=await r.json();
+        if(!alive)return;
+        if(!j.ok){setFeedStat({ok:false,err:j.error||`HTTP ${j.status}`,ts:stamp()});return;}
+        const arr=readPath(j.data,arrPath);
+        const list=Array.isArray(arr)?arr.map(it=>({name:String(readPath(it,nameKey)??"?"),buyNow:Number(readPath(it,priceKey))||0})):[];
+        setListings(list);
+        setFeedStat({ok:true,count:list.length,ts:stamp()});
+      }catch(e){if(alive)setFeedStat({ok:false,err:e.message,ts:stamp()});}
+    };
+    poll();
+    const id=setInterval(poll,Math.max(2,feedSecs)*1000);
+    return()=>{alive=false;clearInterval(id);};
+  },[feedOn,feedUrl,feedTok,feedBody,feedSecs,arrPath,nameKey,priceKey]);
+
+  const feedRows=useMemo(()=>{
+    return listings.map(l=>{
+      const nm=(l.name||"").toLowerCase();
+      const mp=players.find(p=>p.name.toLowerCase()===nm)||players.find(p=>nm&&nm.includes(p.name.toLowerCase()));
+      const key=mp?`${mp.name}__${mp.card}__${mp.pos}__${mp.sub}`:null;
+      const mv=mp?(parseCoins(mvOv[key])||mp.price||0):0;
+      const has=mv>0&&l.buyNow>0;
+      const profit=has?Math.round(mv*(1-AH_TAX)-l.buyNow):null;
+      const disc=has?Math.round((mv-l.buyNow)/mv*100):null;
+      const profitOk=profit!=null&&profit>=profitMin,discOk=disc!=null&&disc>=discountMin;
+      const isSnipe=has&&(matchMode==="all"?(profitOk&&discOk):(profitOk||discOk));
+      return{l,mp,mv,profit,disc,isSnipe};
+    }).sort((a,b)=>{if(a.isSnipe!==b.isSnipe)return a.isSnipe?-1:1;return (b.profit??-1e12)-(a.profit??-1e12);});
+  },[listings,players,mvOv,profitMin,discountMin,matchMode]);
+  const feedSnipes=feedRows.filter(r=>r.isSnipe).length;
+
+  // Beep once when a snipe signature appears that wasn't in the previous poll
+  useEffect(()=>{
+    const cur=new Set(feedRows.filter(r=>r.isSnipe).map(r=>`${r.l.name}@${r.l.buyNow}`));
+    if(feedOn){let fresh=false;cur.forEach(s=>{if(!prevSnipes.current.has(s))fresh=true;});if(fresh&&soundOn)beep();}
+    prevSnipes.current=cur;
+  },[feedRows,feedOn,soundOn]);
+
+  const fld=(label,val,setter,ph,type)=>(<label style={{display:"block",minWidth:0}}>
+    <div style={{fontSize:6,color:C.t3,fontFamily:mono,letterSpacing:1,marginBottom:2}}>{label}</div>
+    <input type={type==="num"?"text":(type||"text")} value={val} onChange={e=>setter(type==="num"?(parseInt(e.target.value)||0):e.target.value)} placeholder={ph} style={{...inp,fontSize:9,padding:"4px 6px"}}/>
+  </label>);
+
+  const rows=useMemo(()=>{
+    const q=search.trim().toLowerCase();
+    return players
+      .filter(p=>!q||p.name.toLowerCase().includes(q)||p.card.toLowerCase().includes(q))
+      .map(p=>{
+        const key=`${p.name}__${p.card}__${p.pos}__${p.sub}`;
+        const mvOvNum=parseCoins(mvOv[key]);
+        const mv=mvOvNum>0?mvOvNum:(p.price||0);
+        const lp=parseCoins(listed[key]);
+        const hasDeal=lp>0&&mv>0;
+        const profit=hasDeal?Math.round(mv*(1-AH_TAX)-lp):null; // sell at mv minus 10% tax, minus buy price
+        const disc=hasDeal?Math.round((mv-lp)/mv*100):null;
+        const profitOk=profit!=null&&profit>=profitMin;
+        const discOk=disc!=null&&disc>=discountMin;
+        const isSnipe=hasDeal&&(matchMode==="all"?(profitOk&&discOk):(profitOk||discOk));
+        return{p,key,mv,lp,hasDeal,profit,disc,profitOk,discOk,isSnipe};
+      })
+      .sort((a,b)=>{
+        if(a.isSnipe!==b.isSnipe)return a.isSnipe?-1:1;
+        if(a.hasDeal!==b.hasDeal)return a.hasDeal?-1:1;
+        return (b.profit??-1e12)-(a.profit??-1e12);
+      });
+  },[players,search,listed,mvOv,profitMin,discountMin,matchMode]);
+
+  const snipes=rows.filter(r=>r.isSnipe);
+  const totalProfit=snipes.reduce((s,r)=>s+(r.profit||0),0);
+  const noPrices=players.every(p=>!p.price);
+
+  return(<div style={{animation:"fadeIn .4s ease"}}>
+    {/* config bar */}
+    <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"flex-end",padding:"9px 10px",borderRadius:7,background:`linear-gradient(135deg,${C.bg2},${C.bg4})`,border:`1px solid ${C.border}`,marginBottom:7}}>
+      <div style={{minWidth:90}}>
+        <div style={{fontSize:6,color:C.t3,fontFamily:mono,letterSpacing:1,marginBottom:2}}>PROFIT ≥ (AFTER TAX)</div>
+        <input value={profitMin===0?"":profitMin} onChange={e=>setProfitMin(parseCoins(e.target.value))} placeholder="5k" style={inp}/>
+      </div>
+      <div style={{minWidth:70}}>
+        <div style={{fontSize:6,color:C.t3,fontFamily:mono,letterSpacing:1,marginBottom:2}}>DISCOUNT ≥ %</div>
+        <input value={discountMin===0?"":discountMin} onChange={e=>setDiscountMin(Math.max(0,Math.min(99,parseInt(e.target.value)||0)))} placeholder="15" style={inp}/>
+      </div>
+      <div>
+        <div style={{fontSize:6,color:C.t3,fontFamily:mono,letterSpacing:1,marginBottom:2}}>MATCH</div>
+        <button onClick={()=>setMatchMode(m=>m==="all"?"any":"all")} title={matchMode==="all"?"Both thresholds must pass":"Either threshold passes"} style={{padding:"4px 10px",borderRadius:4,border:`1px solid ${C.borderHi}`,background:C.bg3,color:C.acc,fontSize:9,fontWeight:700,fontFamily:mono,cursor:"pointer",letterSpacing:1}}>{matchMode==="all"?"ALL":"ANY"}</button>
+      </div>
+      <div style={{flex:1}}/>
+      <div style={{textAlign:"right"}}>
+        <div style={{fontSize:6,color:C.t3,fontFamily:mono,letterSpacing:1}}>ACTIVE SNIPES</div>
+        <div style={{fontSize:18,fontWeight:900,color:snipes.length?C.acc:C.t4,fontFamily:mono,lineHeight:1}}>{snipes.length}</div>
+        {totalProfit>0&&<div style={{fontSize:8,color:C.coin,fontFamily:mono}}>+{fPrice(totalProfit)} potential</div>}
+      </div>
+    </div>
+
+    {/* LIVE FEED — read-only EA Companion auction spotter */}
+    <div style={{marginBottom:7,borderRadius:7,background:C.bg2,border:`1px solid ${feedOn?C.acc+"55":C.border}`,overflow:"hidden"}}>
+      <button onClick={()=>setFeedOpen(o=>!o)} style={{width:"100%",display:"flex",alignItems:"center",gap:6,padding:"7px 9px",background:"none",border:"none",cursor:"pointer",textAlign:"left"}}>
+        <div style={{width:5,height:5,borderRadius:"50%",flexShrink:0,background:feedOn?(feedStat?.ok?C.acc:C.err):C.t4,animation:feedOn?"pulse 1.5s infinite":"none"}}/>
+        <span style={{fontSize:8,fontWeight:700,color:C.t2,fontFamily:mono,letterSpacing:1}}>LIVE FEED</span>
+        <span style={{fontSize:6,color:C.warn,fontFamily:mono,background:C.warnDim,padding:"1px 4px",borderRadius:2}}>READ-ONLY · ToS RISK</span>
+        {feedStat&&<span style={{fontSize:6,color:feedStat.ok?C.t3:C.err,fontFamily:mono,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{feedStat.ok?`${feedStat.count} listings · ${feedSnipes} snipes · ${feedStat.ts}`:`err: ${feedStat.err}`}</span>}
+        <div style={{flex:1}}/>
+        <span style={{fontSize:7,color:C.t4,transform:feedOpen?"rotate(180deg)":"",display:"inline-block",transition:"transform .2s"}}>▼</span>
+      </button>
+      {feedOpen&&<div style={{padding:"0 9px 9px",animation:"fadeIn .2s"}}>
+        <div style={{fontSize:7,color:C.t3,fontFamily:mono,lineHeight:1.5,marginBottom:7,padding:"5px 7px",background:C.bg3,borderRadius:4,border:`1px solid ${C.border}`}}>
+          Capture an auction <b style={{color:C.t2}}>search</b> request from the Madden Companion App (mitmproxy/Charles), then paste the endpoint, your session token, and the JSON paths to map the response. Buy/bid/sell is blocked at the proxy — this only reads &amp; displays.
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:6}}>
+          {fld("ENDPOINT URL (search)",feedUrl,setFeedUrl,"https://...search")}
+          {fld("AUTH HEADER VALUE",feedTok,setFeedTok,"Bearer ... / X-Pin token","password")}
+          {fld("LISTINGS ARRAY PATH",arrPath,setArrPath,"data.auctionInfo")}
+          {fld("POLL EVERY (sec)",feedSecs,setFeedSecs,"5","num")}
+          {fld("NAME KEY",nameKey,setNameKey,"itemData.fullName")}
+          {fld("BUY-NOW KEY",priceKey,setPriceKey,"buyNowPrice")}
+        </div>
+        <label style={{display:"block",marginBottom:6}}>
+          <div style={{fontSize:6,color:C.t3,fontFamily:mono,letterSpacing:1,marginBottom:2}}>REQUEST BODY JSON (optional — leave blank for GET)</div>
+          <textarea value={feedBody} onChange={e=>setFeedBody(e.target.value)} placeholder='{"sort":"...","filter":...}' rows={2} style={{...inp,fontSize:9,padding:"4px 6px",resize:"vertical"}}/>
+        </label>
+        <div style={{display:"flex",gap:6}}>
+          <button onClick={()=>setFeedOn(v=>!v)} disabled={!feedUrl} style={{flex:1,padding:"6px",borderRadius:5,border:`1px solid ${feedOn?C.err+"66":C.acc+"66"}`,background:feedOn?C.errDim:C.accDim,color:feedOn?C.err:C.acc,fontSize:9,fontWeight:800,fontFamily:mono,letterSpacing:1,cursor:feedUrl?"pointer":"not-allowed",opacity:feedUrl?1:.5}}>{feedOn?"■ STOP POLLING":"▶ START LIVE FEED"}</button>
+          <button onClick={()=>setSoundOn(v=>!v)} title="Beep on new snipe" style={{padding:"6px 10px",borderRadius:5,border:`1px solid ${soundOn?C.acc+"66":C.border}`,background:soundOn?C.accDim:C.bg3,color:soundOn?C.acc:C.t4,fontSize:11,cursor:"pointer"}}>{soundOn?"🔔":"🔕"}</button>
+        </div>
+      </div>}
+    </div>
+
+    {/* live listings */}
+    {feedOn&&<div style={{marginBottom:7}}>
+      {feedRows.length===0&&<div style={{padding:"10px",textAlign:"center",fontSize:8,color:C.t4,fontFamily:mono}}>{feedStat?.ok?"Feed connected — no listings parsed. Check your array/field paths.":"Waiting for feed..."}</div>}
+      {feedRows.length>0&&<div style={{maxHeight:200,overflowY:"auto",display:"flex",flexDirection:"column",gap:3,padding:"2px"}}>
+        {feedRows.map((r,i)=>(<div key={i} style={{display:"grid",gridTemplateColumns:"1fr 74px 64px 48px",gap:5,alignItems:"center",padding:"4px 7px",borderRadius:5,background:r.isSnipe?C.accDim:C.bg3,border:`1px solid ${r.isSnipe?C.acc+"55":C.border}`}}>
+          <div style={{minWidth:0,display:"flex",alignItems:"center",gap:4}}>
+            {r.isSnipe&&<span style={{fontSize:8}}>🎯</span>}
+            <span style={{fontSize:10,fontWeight:600,color:C.t1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.l.name}</span>
+            {!r.mp&&<span style={{fontSize:6,color:C.t4,fontFamily:mono}}>no mv</span>}
+          </div>
+          <div style={{textAlign:"right",fontSize:10,fontWeight:700,color:C.warn,fontFamily:mono}}>{fPrice(r.l.buyNow)||r.l.buyNow}</div>
+          <div style={{textAlign:"right",fontSize:10,fontWeight:800,color:r.profit!=null?(r.isSnipe?C.acc:r.profit>0?C.blue:C.err):C.t4,fontFamily:mono}}>{fSigned(r.profit)}</div>
+          <div style={{textAlign:"right",fontSize:9,fontWeight:700,color:r.disc!=null?(r.disc>=discountMin?C.acc:C.t3):C.t4,fontFamily:mono}}>{r.disc!=null?r.disc+"%":"—"}</div>
+        </div>))}
+      </div>}
+    </div>}
+
+    {noPrices&&<div style={{padding:"6px 9px",marginBottom:6,borderRadius:5,background:C.warnDim,border:`1px solid ${C.warn}33`,fontSize:8,color:C.warn,fontFamily:mono}}>
+      ⚠ No market values yet. Hit REFRESH to pull live prices from mut.gg, or type a market value per card below.
+    </div>}
+
+    <div style={{fontSize:6,color:C.t3,fontFamily:mono,letterSpacing:1,padding:"2px 8px 4px"}}>MANUAL ENTRY</div>
+
+    {/* column header */}
+    <div style={{display:"grid",gridTemplateColumns:"1fr 78px 78px 64px 52px",gap:5,padding:"0 8px 4px",fontSize:6,color:C.t3,fontFamily:mono,letterSpacing:1}}>
+      <span>PLAYER</span><span>MARKET</span><span>LISTED @</span><span style={{textAlign:"right"}}>PROFIT</span><span style={{textAlign:"right"}}>DISC</span>
+    </div>
+
+    {rows.length===0&&<div style={{padding:20,textAlign:"center",color:C.t4,fontFamily:mono,fontSize:10}}>{search?`No results for "${search}"`:"No players"}</div>}
+
+    {rows.map(r=>{
+      const pc=r.isSnipe?C.acc:r.profit!=null?(r.profit>0?C.blue:C.err):C.t4;
+      return(<div key={r.key} style={{display:"grid",gridTemplateColumns:"1fr 78px 78px 64px 52px",gap:5,alignItems:"center",padding:"6px 8px",marginBottom:4,borderRadius:6,background:r.isSnipe?C.accDim:C.bg2,border:`1px solid ${r.isSnipe?C.acc+"55":C.border}`,boxShadow:r.isSnipe?`0 0 12px ${C.acc}14`:"none",transition:"all .2s"}}>
+        <div style={{minWidth:0}}>
+          <div style={{display:"flex",alignItems:"center",gap:4}}>
+            {r.isSnipe&&<span style={{fontSize:8,color:C.acc}}>🎯</span>}
+            <span style={{fontSize:11,fontWeight:700,color:C.t1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.p.name}</span>
+          </div>
+          <div style={{fontSize:7,color:C.t3,fontFamily:mono}}>{r.p.pos}{r.p.sub&&r.p.sub!==r.p.pos?` · ${r.p.sub}`:""} · {r.p.card} · {r.p.ovr}</div>
+        </div>
+        <input value={mvOv[r.key]??""} onChange={e=>setM(r.key,e.target.value)} placeholder={fPrice(r.p.price)||"set mv"} style={{...inp,fontSize:9,padding:"3px 5px"}}/>
+        <input value={listed[r.key]??""} onChange={e=>setL(r.key,e.target.value)} placeholder="—" style={{...inp,fontSize:9,padding:"3px 5px",borderColor:r.isSnipe?C.acc+"66":C.border}}/>
+        <div style={{textAlign:"right",fontSize:11,fontWeight:800,color:pc,fontFamily:mono}}>{fSigned(r.profit)}</div>
+        <div style={{textAlign:"right",fontSize:10,fontWeight:700,color:r.disc!=null?(r.discOk?C.acc:r.disc>0?C.t2:C.err):C.t4,fontFamily:mono}}>{r.disc!=null?r.disc+"%":"—"}</div>
+      </div>);
+    })}
+  </div>);
+}
+
 export default function App(){
   const[pos,setPos]=useState("QB"),[sub,setSub]=useState(null),[tab,setTab]=useState("players");
   const[search,setSearch]=useState(""),[tt,setTt]=useState(false);
   const[players,setPlayers]=useState(INIT),[loaded,setLoaded]=useState(false);
   const[rfr,setRfr]=useState(false),[rfrP,setRfrP]=useState(""),[lr,setLr]=useState("Initial · Mar 2 2026 · mut.gg verified");
   const[rLog,setRLog]=useState([]),[showLog,setShowLog]=useState(false),[rCount,setRCount]=useState(0);
+  const[snListed,setSnListed]=useLS("mut.snipe.listed",{}),[snMvOv,setSnMvOv]=useLS("mut.snipe.mvOv",{});
+  const[profitMin,setProfitMin]=useLS("mut.snipe.profitMin",5000),[discountMin,setDiscountMin]=useLS("mut.snipe.discountMin",15),[matchMode,setMatchMode]=useLS("mut.snipe.matchMode","any");
+  const[plat,setPlat]=useLS("mut.plat","ps5"),[mgRfr,setMgRfr]=useState(false);
 
   useEffect(()=>{const l=document.createElement("link");l.href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Outfit:wght@300;400;500;600;700;800;900&display=swap";l.rel="stylesheet";document.head.appendChild(l);setTimeout(()=>setLoaded(true),150);},[]);
   useEffect(()=>{setSub(null);},[pos]);
@@ -617,6 +849,20 @@ export default function App(){
     setPlayers(nP);setRCount(c=>c+1);setLr(`${new Date().toLocaleTimeString()} · ${up}/${RM.length} refreshed`);setRfrP("");setRfr(false);
   },[rfr,players]);
 
+  const doMutgg=useCallback(async()=>{
+    if(mgRfr)return;setMgRfr(true);
+    try{
+      const payload=players.map(p=>({key:`${p.name}__${p.card}__${p.pos}__${p.sub}`,name:p.name,ovr:p.ovr,program:p.card}));
+      const r=await fetch("/api/mutgg",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({players:payload,platform:plat})});
+      const j=await r.json();
+      const map={};(j.prices||[]).forEach(x=>{map[x.key]=x;});
+      setPlayers(ps=>ps.map(p=>{const m=map[`${p.name}__${p.card}__${p.pos}__${p.sub}`];return m&&m.price>0?{...p,price:m.price}:p;}));
+      const n=(j.prices||[]).filter(x=>x.price>0).length;
+      setLr(`${new Date().toLocaleTimeString()} · mut.gg ${plat.toUpperCase()} · ${n}/${payload.length} priced`);
+    }catch(e){console.error("mut.gg refresh failed:",e);setLr("mut.gg refresh failed — see console");}
+    setMgRfr(false);
+  },[mgRfr,players,plat]);
+
   const cfg=PC[pos];
   const pl=useMemo(()=>{
     let l=players.filter(p=>p.pos===pos);
@@ -644,6 +890,13 @@ export default function App(){
           <div style={{display:"flex",alignItems:"center",gap:3,padding:"2px 7px",background:C.accDim,borderRadius:4,border:`1px solid ${C.acc}33`}}>
             <div style={{width:4,height:4,borderRadius:"50%",background:C.acc,animation:"pulse 2s infinite"}}/><span style={{fontSize:7,color:C.acc,fontFamily:"'Space Mono',monospace",fontWeight:700}}>LIVE</span>
           </div>
+          <select value={plat} onChange={e=>setPlat(e.target.value)} title="Price platform" style={{height:28,padding:"0 4px",borderRadius:5,border:`1px solid ${C.border}`,background:C.bg2,color:C.t2,fontSize:8,fontFamily:"'Space Mono',monospace",fontWeight:700,cursor:"pointer",outline:"none"}}>
+            <option value="ps5">PS5</option><option value="ps4">PS4</option><option value="xbsx">XBSX</option><option value="xb1">XB1</option><option value="pc">PC</option>
+          </select>
+          <button onClick={doMutgg} disabled={mgRfr} title="Refresh market values from mut.gg" style={{height:28,padding:"0 9px",borderRadius:5,border:`1px solid ${mgRfr?C.coin+"66":C.border}`,background:mgRfr?C.warnDim:C.bg2,cursor:mgRfr?"default":"pointer",display:"flex",alignItems:"center",gap:4,transition:"all .2s"}}>
+            <span style={{fontSize:11}}>🪙</span>
+            <span style={{fontSize:8,fontWeight:600,color:mgRfr?C.coin:C.t3,fontFamily:"'Space Mono',monospace"}}>{mgRfr?"...":"PRICES"}</span>
+          </button>
           <button onClick={doRefresh} disabled={rfr} title={lr} style={{height:28,padding:"0 9px",borderRadius:5,border:`1px solid ${rfr?C.acc+"66":C.border}`,background:rfr?C.accDim:C.bg2,cursor:rfr?"default":"pointer",display:"flex",alignItems:"center",gap:4,transition:"all .2s"}}>
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={rfr?C.acc:C.t3} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{animation:rfr?"spin .7s linear infinite":"none"}}><path d="M21.5 2v6h-6M2.5 22v-6h6"/><path d="M2.5 11.5a10 10 0 0 1 18.4-4.5M21.5 12.5a10 10 0 0 1-18.4 4.5"/></svg>
             <span style={{fontSize:8,fontWeight:600,color:rfr?C.acc:C.t3,fontFamily:"'Space Mono',monospace"}}>{rfr?"LIVE":"REFRESH"}</span>
@@ -716,7 +969,7 @@ export default function App(){
     </div>;})()}
 
     <div style={{display:"flex",gap:2,padding:"7px 15px 3px"}}>
-      {[{k:"players",l:"Player Rankings"},{k:"thresholds",l:"Thresholds"}].map(t=><button key={t.k} onClick={()=>setTab(t.k)} style={{padding:"2px 8px",borderRadius:3,border:`1px solid ${tab===t.k?C.borderHi:C.border}`,cursor:"pointer",fontSize:8,fontWeight:600,background:tab===t.k?C.bg3:"transparent",color:tab===t.k?C.t1:C.t3}}>{t.l}</button>)}
+      {[{k:"players",l:"Player Rankings"},{k:"snipe",l:"🎯 Snipe"},{k:"thresholds",l:"Thresholds"}].map(t=><button key={t.k} onClick={()=>setTab(t.k)} style={{padding:"2px 8px",borderRadius:3,border:`1px solid ${tab===t.k?C.borderHi:C.border}`,cursor:"pointer",fontSize:8,fontWeight:600,background:tab===t.k?C.bg3:"transparent",color:tab===t.k?C.t1:C.t3}}>{t.l}</button>)}
     </div>
 
     <div style={{padding:"3px 15px 36px",maxHeight:"calc(100vh - 300px)",overflowY:"auto"}}>
@@ -725,6 +978,7 @@ export default function App(){
         {pl.map((p,i)=><Card key={`${p.name}-${p.card}-${i}`} p={p} pos={pos} sub={sub}/>)}
         {pl.length>1&&<Bars pl={pl}/>}
       </div>}
+      {tab==="snipe"&&<SnipePanel players={players} search={search} listed={snListed} setListed={setSnListed} mvOv={snMvOv} setMvOv={setSnMvOv} profitMin={profitMin} setProfitMin={setProfitMin} discountMin={discountMin} setDiscountMin={setDiscountMin} matchMode={matchMode} setMatchMode={setMatchMode}/>}
       {tab==="thresholds"&&<div style={{display:"flex",flexDirection:"column",gap:4,animation:"fadeIn .4s ease"}}>
         {THRESHOLDS.map((t,i)=><div key={i} style={{display:"flex",alignItems:"center",gap:7,padding:"6px 9px",background:C.bg2,borderRadius:6,border:`1px solid ${C.border}`}}>
           <div style={{width:30,height:30,borderRadius:4,display:"flex",alignItems:"center",justifyContent:"center",background:C.accDim,fontSize:12,fontWeight:900,color:C.acc,fontFamily:"'Space Mono',monospace",flexShrink:0}}>{t.v}</div>
