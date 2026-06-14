@@ -164,7 +164,9 @@ function SnipePanel({players,search,listed,setListed,mvOv,setMvOv,profitMin,setP
   const[guideOpen,setGuideOpen]=useState(false);
   const[notifyPerm,setNotifyPerm]=useState(typeof Notification!=="undefined"?Notification.permission:"unsupported");
   const[scanRes,setScanRes]=useState(null),[scanning,setScanning]=useState(false);
+  const[feedRotate,setFeedRotate]=useLS("mut.feed.rotate","");
   const prevSnipes=useRef(new Set());
+  const backoffRef=useRef(1),seenRef=useRef(new Set()),rotRef=useRef(0);
 
   // On-demand server-side scan: one read-only fetch + server margin math.
   async function doScan(){
@@ -185,27 +187,43 @@ function SnipePanel({players,search,listed,setListed,mvOv,setMvOv,profitMin,setP
     Notification.requestPermission().then(p=>setNotifyPerm(p)).catch(()=>{});
   };
 
+  // Adaptive poll loop: self-schedules at the floor interval, backs off
+  // exponentially on rate-limits/errors (so we never hammer EA into a ban) and
+  // recovers on clean polls. Rotates through extra search bodies for coverage,
+  // and flags listings new since the previous poll.
   useEffect(()=>{
     if(!feedOn||!feedUrl)return;
-    let alive=true;
+    let alive=true,timer=null;
+    const floor=Math.max(2,feedSecs);
     const stamp=()=>new Date().toLocaleTimeString("en",{hour12:false});
+    const bodies=()=>{const extra=(feedRotate||"").split("\n").map(s=>s.trim()).filter(Boolean);return [feedBody.trim(),...extra];};
+    backoffRef.current=1;
     const poll=async()=>{
       try{
+        const bs=bodies();const body=bs[rotRef.current%bs.length]||"";rotRef.current++;
         const r=await fetch("/api/ah-feed",{method:"POST",headers:{"Content-Type":"application/json"},
-          body:JSON.stringify({endpoint:feedUrl,method:feedBody.trim()?"POST":"GET",token:feedTok,body:feedBody.trim()||undefined})});
+          body:JSON.stringify({endpoint:feedUrl,method:body?"POST":"GET",token:feedTok,body:body||undefined})});
         const j=await r.json();
         if(!alive)return;
-        if(!j.ok){setFeedStat({ok:false,err:j.error||`HTTP ${j.status}`,ts:stamp()});return;}
+        if(!j.ok){
+          const throttled=j.status===429;
+          backoffRef.current=Math.min(throttled?16:8,backoffRef.current*(throttled?2:1.5));
+          setFeedStat({ok:false,err:throttled?"rate-limited — backing off":(j.error||`HTTP ${j.status}`),ts:stamp(),wait:Math.round(floor*backoffRef.current)});
+          return;
+        }
+        backoffRef.current=1;
         const arr=readPath(j.data,arrPath);
-        const list=Array.isArray(arr)?arr.map(it=>({name:String(readPath(it,nameKey)??"?"),buyNow:Number(readPath(it,priceKey))||0})):[];
+        const prev=seenRef.current;
+        const list=Array.isArray(arr)?arr.map(it=>{const name=String(readPath(it,nameKey)??"?");const buyNow=Number(readPath(it,priceKey))||0;const sig=`${name}@${buyNow}`;return{name,buyNow,sig,isNew:!prev.has(sig)};}):[];
+        seenRef.current=new Set(list.map(x=>x.sig));
         setListings(list);
-        setFeedStat({ok:true,count:list.length,ts:stamp()});
-      }catch(e){if(alive)setFeedStat({ok:false,err:e.message,ts:stamp()});}
+        setFeedStat({ok:true,count:list.length,newCount:list.filter(x=>x.isNew).length,ts:stamp(),wait:floor});
+      }catch(e){if(alive){backoffRef.current=Math.min(8,backoffRef.current*1.5);setFeedStat({ok:false,err:e.message,ts:stamp(),wait:Math.round(floor*backoffRef.current)});}}
+      finally{if(alive)timer=setTimeout(poll,Math.min(60,floor*backoffRef.current)*1000);}
     };
     poll();
-    const id=setInterval(poll,Math.max(2,feedSecs)*1000);
-    return()=>{alive=false;clearInterval(id);};
-  },[feedOn,feedUrl,feedTok,feedBody,feedSecs,arrPath,nameKey,priceKey]);
+    return()=>{alive=false;if(timer)clearTimeout(timer);};
+  },[feedOn,feedUrl,feedTok,feedBody,feedSecs,arrPath,nameKey,priceKey,feedRotate]);
 
   // Precompute normalized roster names once per roster change for matching.
   const normRoster=useMemo(()=>players.map(p=>({p,nn:normName(p.name)})),[players]);
@@ -313,7 +331,7 @@ function SnipePanel({players,search,listed,setListed,mvOv,setMvOv,profitMin,setP
         <div style={{width:5,height:5,borderRadius:"50%",flexShrink:0,background:feedOn?(feedStat?.ok?C.acc:C.err):C.t4,animation:feedOn?"pulse 1.5s infinite":"none"}}/>
         <span style={{fontSize:8,fontWeight:700,color:C.t2,fontFamily:mono,letterSpacing:1}}>LIVE FEED</span>
         <span style={{fontSize:6,color:C.warn,fontFamily:mono,background:C.warnDim,padding:"1px 4px",borderRadius:2}}>READ-ONLY · ToS RISK</span>
-        {feedStat&&<span style={{fontSize:6,color:feedStat.ok?C.t3:C.err,fontFamily:mono,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{feedStat.ok?`${feedStat.count} listings · ${feedSnipes} snipes · ${feedStat.ts}`:`err: ${feedStat.err}`}</span>}
+        {feedStat&&<span style={{fontSize:6,color:feedStat.ok?C.t3:C.err,fontFamily:mono,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{feedStat.ok?`${feedStat.count} listings · ${feedStat.newCount||0} new · ${feedSnipes} snipes · ${feedStat.wait}s · ${feedStat.ts}`:`${feedStat.err} · retry ${feedStat.wait||""}s · ${feedStat.ts}`}</span>}
         <div style={{flex:1}}/>
         <span style={{fontSize:7,color:C.t4,transform:feedOpen?"rotate(180deg)":"",display:"inline-block",transition:"transform .2s"}}>▼</span>
       </button>
@@ -351,6 +369,10 @@ function SnipePanel({players,search,listed,setListed,mvOv,setMvOv,profitMin,setP
         <label style={{display:"block",marginBottom:6}}>
           <div style={{fontSize:6,color:C.t3,fontFamily:mono,letterSpacing:1,marginBottom:2}}>REQUEST BODY JSON (optional — leave blank for GET)</div>
           <textarea value={feedBody} onChange={e=>setFeedBody(e.target.value)} placeholder='{"sort":"...","filter":...}' rows={2} style={{...inp,fontSize:9,padding:"4px 6px",resize:"vertical"}}/>
+        </label>
+        <label style={{display:"block",marginBottom:6}}>
+          <div style={{fontSize:6,color:C.t3,fontFamily:mono,letterSpacing:1,marginBottom:2}}>ROTATE SEARCHES — extra bodies, one JSON per line (widens coverage, same token)</div>
+          <textarea value={feedRotate} onChange={e=>setFeedRotate(e.target.value)} placeholder='{"filter":"...QB..."}&#10;{"filter":"...WR..."}' rows={2} style={{...inp,fontSize:9,padding:"4px 6px",resize:"vertical"}}/>
         </label>
         {/* ToS acknowledgement gate — required before the feed can start */}
         <label style={{display:"flex",gap:7,alignItems:"flex-start",marginBottom:7,padding:"7px 8px",borderRadius:5,background:C.errDim,border:`1px solid ${C.err}66`,cursor:"pointer"}}>
@@ -393,6 +415,7 @@ function SnipePanel({players,search,listed,setListed,mvOv,setMvOv,profitMin,setP
           <div style={{minWidth:0,display:"flex",alignItems:"center",gap:4}}>
             {r.isSnipe&&<span style={{fontSize:8}}>🎯</span>}
             {r.isSnipe&&<HeatBadge h={r.heat}/>}
+            {r.l.isNew&&<span title="New since last poll" style={{fontSize:6,fontWeight:800,color:C.blue,fontFamily:mono,background:C.blueDim,border:`1px solid ${C.blue}55`,borderRadius:2,padding:"0 2px",flexShrink:0}}>NEW</span>}
             <span style={{fontSize:10,fontWeight:600,color:C.t1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.l.name}</span>
             {!r.mp&&<span style={{fontSize:6,color:C.t4,fontFamily:mono}}>no mv</span>}
           </div>
