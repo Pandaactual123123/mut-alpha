@@ -307,11 +307,34 @@ function SnipePanel({players,search,listed,setListed,mvOv,setMvOv,profitMin,setP
 
 function fmtPct(n){if(n==null)return null;return (n>0?"+":"")+n.toFixed(1)+"%";}
 
-const CAT_POS=["","QB","HB","FB","WR","TE","LT","LG","C","RG","RT","LE","RE","DT","LOLB","MLB","ROLB","CB","FS","SS","K","P"];
+// Client-side price history. mut.gg exposes no public price series, so we record
+// our own real snapshots (capped ring buffer) each time a price is seen.
+function histKey(pk,plat){return `mut.hist.${pk}.${plat}`;}
+function getHistory(pk,plat){try{return JSON.parse(localStorage.getItem(histKey(pk,plat)))||[];}catch{return[];}}
+function pushHistory(pk,plat,price){
+  if(!pk||!price||price<=0)return;
+  const key=histKey(pk,plat);let arr=[];try{arr=JSON.parse(localStorage.getItem(key))||[];}catch{}
+  const now=Date.now(),last=arr[arr.length-1];
+  if(!last||last.p!==price||now-last.t>3600000)arr.push({t:now,p:price});
+  if(arr.length>40)arr=arr.slice(-40);
+  try{localStorage.setItem(key,JSON.stringify(arr));}catch{}
+}
+
+// Tiny SVG sparkline of whatever real points we've collected so far.
+function Spark({data,w=52,h=16}){
+  if(!data||data.length<2)return <div style={{width:w,height:h,display:"flex",alignItems:"center",justifyContent:"center",fontSize:6,color:C.t4,fontFamily:"'Space Mono',monospace"}}>·</div>;
+  const ps=data.map(d=>d.p),min=Math.min(...ps),max=Math.max(...ps),rng=max-min||1;
+  const pts=data.map((d,i)=>{const x=(i/(data.length-1))*(w-2)+1;const y=h-1-((d.p-min)/rng)*(h-2);return `${x.toFixed(1)},${y.toFixed(1)}`;}).join(" ");
+  const up=ps[ps.length-1]>=ps[0];
+  return <svg width={w} height={h} style={{display:"block"}}><polyline points={pts} fill="none" stroke={up?C.acc:C.err} strokeWidth="1.2" strokeLinejoin="round" strokeLinecap="round"/></svg>;
+}
+
+// mut.gg position abbreviations (LEDG/REDG for edges; MIKE/WILL/SAM for LBs)
+const CAT_POS=["","QB","HB","FB","WR","TE","LT","LG","C","RG","RT","LEDG","REDG","DT","MIKE","WILL","SAM","CB","FS","SS","K","P"];
 const CAT_SORTS=[["ovr_desc","OVR ↓"],["ovr_asc","OVR ↑"],["price_desc","PRICE ↓"],["price_asc","PRICE ↑"],["change_desc","CHANGE ↓"],["change_asc","CHANGE ↑"]];
 
 // Market Catalog — live, server-paginated read of mut.gg's public price index.
-function CatalogPanel({platform,search}){
+function CatalogPanel({platform,search,onAdd,addedKeys}){
   const mono="'Space Mono',monospace";
   const sel={height:26,padding:"0 6px",borderRadius:5,border:`1px solid ${C.border}`,background:C.bg2,color:C.t2,fontSize:9,fontFamily:mono,fontWeight:700,cursor:"pointer",outline:"none"};
   const[rows,setRows]=useState([]),[page,setPage]=useState(1),[loading,setLoading]=useState(false);
@@ -329,7 +352,9 @@ function CatalogPanel({platform,search}){
     if(auctionOnly)params.set("auctionOnly","1");
     fetch(`/api/catalog?${params.toString()}`).then(r=>r.json()).then(j=>{
       if(!alive)return;
-      setRows(j.data||[]);setHasMore(!!j.hasMore);setErr(j.error||null);
+      const data=j.data||[];
+      data.forEach(c=>pushHistory(c.pk,platform,c.price));
+      setRows(data);setHasMore(!!j.hasMore);setErr(j.error||null);
     }).catch(e=>{if(alive)setErr(e.message);}).finally(()=>{if(alive)setLoading(false);});
     return()=>{alive=false;};
   },[page,platform,search,sort,position,auctionOnly]);
@@ -349,8 +374,8 @@ function CatalogPanel({platform,search}){
 
     {err&&<div style={{padding:"6px 9px",marginBottom:6,borderRadius:5,background:C.errDim,border:`1px solid ${C.err}33`,fontSize:8,color:C.err,fontFamily:mono}}>catalog error: {err}</div>}
 
-    <div style={{display:"grid",gridTemplateColumns:"1fr 88px 60px",gap:5,padding:"0 8px 4px",fontSize:6,color:C.t3,fontFamily:mono,letterSpacing:1}}>
-      <span>PLAYER</span><span style={{textAlign:"right"}}>PRICE</span><span style={{textAlign:"right"}}>CHANGE</span>
+    <div style={{display:"grid",gridTemplateColumns:"26px 1fr 52px 72px 48px 22px",gap:5,padding:"0 8px 4px",fontSize:6,color:C.t3,fontFamily:mono,letterSpacing:1}}>
+      <span/><span>PLAYER</span><span>TREND</span><span style={{textAlign:"right"}}>PRICE</span><span style={{textAlign:"right"}}>CHG</span><span/>
     </div>
 
     {!loading&&rows.length===0&&<div style={{padding:20,textAlign:"center",color:C.t4,fontFamily:mono,fontSize:10}}>{search?`No results for "${search}"`:"No cards"}</div>}
@@ -358,7 +383,12 @@ function CatalogPanel({platform,search}){
     {rows.map(c=>{
       const chg=fmtPct(c.pctChange);
       const cc=c.pctChange==null?C.t4:c.pctChange>0?C.acc:c.pctChange<0?C.err:C.t3;
-      return(<div key={c.pk} style={{display:"grid",gridTemplateColumns:"1fr 88px 60px",gap:5,alignItems:"center",padding:"6px 8px",marginBottom:4,borderRadius:6,background:C.bg2,border:`1px solid ${C.border}`}}>
+      const ckey=`${c.name}__${c.program}__${c.pos}__${c.pos}`;
+      const added=addedKeys&&addedKeys.has(ckey);
+      return(<div key={c.pk} style={{display:"grid",gridTemplateColumns:"26px 1fr 52px 72px 48px 22px",gap:5,alignItems:"center",padding:"5px 8px",marginBottom:4,borderRadius:6,background:C.bg2,border:`1px solid ${C.border}`}}>
+        <div style={{width:26,height:26,borderRadius:4,overflow:"hidden",background:C.bg3,display:"flex",alignItems:"center",justifyContent:"center"}}>
+          {c.image?<img src={c.image} alt="" width={26} height={26} loading="lazy" style={{objectFit:"cover",objectPosition:"top"}}/>:<span style={{fontSize:8,color:C.t4,fontFamily:mono}}>{c.pos}</span>}
+        </div>
         <div style={{minWidth:0}}>
           <div style={{display:"flex",alignItems:"center",gap:5}}>
             <span style={{fontSize:9,fontWeight:800,color:C.acc,fontFamily:mono,minWidth:18}}>{c.ovr}</span>
@@ -367,8 +397,10 @@ function CatalogPanel({platform,search}){
           </div>
           <div style={{fontSize:7,color:C.t3,fontFamily:mono,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{[c.pos,c.program,c.team,c.archetype].filter(Boolean).join(" · ")}</div>
         </div>
+        <div title="Price history (builds as you refresh)"><Spark data={getHistory(c.pk,platform)}/></div>
         <div style={{textAlign:"right",fontSize:11,fontWeight:800,color:c.price>0?C.coin:C.t4,fontFamily:mono}}>{c.price>0?(fPrice(c.price)||c.price):"—"}</div>
         <div style={{textAlign:"right",fontSize:9,fontWeight:700,color:cc,fontFamily:mono}}>{chg||"—"}</div>
+        <button onClick={()=>!added&&onAdd&&onAdd(c)} disabled={added} title={added?"In Snipe watchlist":"Add to Snipe watchlist"} style={{width:22,height:22,borderRadius:4,border:`1px solid ${added?C.acc+"55":C.border}`,background:added?C.accDim:C.bg3,color:added?C.acc:C.t2,fontSize:11,fontWeight:700,cursor:added?"default":"pointer",lineHeight:1,padding:0}}>{added?"✓":"+"}</button>
       </div>);
     })}
 
@@ -406,6 +438,16 @@ export default function App(){
     }catch(e){console.error("mut.gg refresh failed:",e);setLr("mut.gg refresh failed — see console");}
     setMgRfr(false);
   },[mgRfr,players,plat]);
+
+  // Add a catalog card to the Snipe roster (dedup by name+program+pos)
+  const addToSnipe=useCallback((c)=>{
+    setPlayers(ps=>{
+      const sub=c.pos,key=`${c.name}__${c.program}__${c.pos}__${sub}`;
+      if(ps.some(p=>`${p.name}__${p.card}__${p.pos}__${p.sub}`===key))return ps;
+      return[...ps,{pos:c.pos,sub,name:c.name,card:c.program||"?",ovr:c.ovr||0,arch:c.archetype||"",start:0,price:c.price||0,s:{}}];
+    });
+  },[]);
+  const addedKeys=useMemo(()=>new Set(players.map(p=>`${p.name}__${p.card}__${p.pos}__${p.sub}`)),[players]);
 
   return(<div style={{minHeight:"100vh",background:C.bg,color:C.t1,fontFamily:"'Outfit',sans-serif",opacity:loaded?1:0,transition:"opacity .5s"}}>
     <style>{`@keyframes fadeIn{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}@keyframes pulse{0%,100%{opacity:.3}50%{opacity:1}}@keyframes spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}*{box-sizing:border-box}::-webkit-scrollbar{width:3px}::-webkit-scrollbar-track{background:${C.bg}}::-webkit-scrollbar-thumb{background:${C.border};border-radius:3px}input::placeholder{color:${C.t4}}`}</style>
@@ -446,7 +488,7 @@ export default function App(){
 
     <div style={{padding:"9px 15px 36px",maxHeight:"calc(100vh - 150px)",overflowY:"auto",borderTop:`1px solid ${C.border}`}}>
       {tab==="snipe"&&<SnipePanel players={players} search={search} listed={snListed} setListed={setSnListed} mvOv={snMvOv} setMvOv={setSnMvOv} profitMin={profitMin} setProfitMin={setProfitMin} discountMin={discountMin} setDiscountMin={setDiscountMin} matchMode={matchMode} setMatchMode={setMatchMode}/>}
-      {tab==="catalog"&&<CatalogPanel platform={plat} search={search}/>}
+      {tab==="catalog"&&<CatalogPanel platform={plat} search={search} onAdd={addToSnipe} addedKeys={addedKeys}/>}
     </div>
   </div>);
 }

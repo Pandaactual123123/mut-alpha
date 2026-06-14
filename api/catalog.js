@@ -36,7 +36,7 @@ function normalize(it, plat) {
     price: it[plat.price] || 0,
     priceDisplay: it[plat.disp] || "",
     pctChange: typeof it[plat.chg] === "number" ? it[plat.chg] : null,
-    image: it.cardImage || it.image || "",
+    image: it.image?.url || it.cardImage?.url || it.fullImage?.url || "",
     url: it.url || "",
   };
 }
