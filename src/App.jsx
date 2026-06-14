@@ -305,8 +305,84 @@ function SnipePanel({players,search,listed,setListed,mvOv,setMvOv,profitMin,setP
   </div>);
 }
 
+function fmtPct(n){if(n==null)return null;return (n>0?"+":"")+n.toFixed(1)+"%";}
+
+const CAT_POS=["","QB","HB","FB","WR","TE","LT","LG","C","RG","RT","LE","RE","DT","LOLB","MLB","ROLB","CB","FS","SS","K","P"];
+const CAT_SORTS=[["ovr_desc","OVR ↓"],["ovr_asc","OVR ↑"],["price_desc","PRICE ↓"],["price_asc","PRICE ↑"],["change_desc","CHANGE ↓"],["change_asc","CHANGE ↑"]];
+
+// Market Catalog — live, server-paginated read of mut.gg's public price index.
+function CatalogPanel({platform,search}){
+  const mono="'Space Mono',monospace";
+  const sel={height:26,padding:"0 6px",borderRadius:5,border:`1px solid ${C.border}`,background:C.bg2,color:C.t2,fontSize:9,fontFamily:mono,fontWeight:700,cursor:"pointer",outline:"none"};
+  const[rows,setRows]=useState([]),[page,setPage]=useState(1),[loading,setLoading]=useState(false);
+  const[sort,setSort]=useLS("mut.cat.sort","ovr_desc"),[position,setPosition]=useLS("mut.cat.pos","");
+  const[auctionOnly,setAuctionOnly]=useLS("mut.cat.auction",false);
+  const[hasMore,setHasMore]=useState(false),[err,setErr]=useState(null);
+
+  useEffect(()=>{setPage(1);},[platform,search,sort,position,auctionOnly]);
+
+  useEffect(()=>{
+    let alive=true;setLoading(true);setErr(null);
+    const params=new URLSearchParams({page:String(page),platform,sort});
+    if(search.trim())params.set("q",search.trim());
+    if(position)params.set("position",position);
+    if(auctionOnly)params.set("auctionOnly","1");
+    fetch(`/api/catalog?${params.toString()}`).then(r=>r.json()).then(j=>{
+      if(!alive)return;
+      setRows(j.data||[]);setHasMore(!!j.hasMore);setErr(j.error||null);
+    }).catch(e=>{if(alive)setErr(e.message);}).finally(()=>{if(alive)setLoading(false);});
+    return()=>{alive=false;};
+  },[page,platform,search,sort,position,auctionOnly]);
+
+  return(<div style={{animation:"fadeIn .4s ease"}}>
+    <div style={{display:"flex",gap:5,flexWrap:"wrap",alignItems:"center",padding:"7px 9px",borderRadius:7,background:`linear-gradient(135deg,${C.bg2},${C.bg4})`,border:`1px solid ${C.border}`,marginBottom:7}}>
+      <select value={position} onChange={e=>setPosition(e.target.value)} title="Position" style={sel}>
+        {CAT_POS.map(p=><option key={p} value={p}>{p||"ALL POS"}</option>)}
+      </select>
+      <select value={sort} onChange={e=>setSort(e.target.value)} title="Sort" style={sel}>
+        {CAT_SORTS.map(([v,l])=><option key={v} value={v}>{l}</option>)}
+      </select>
+      <button onClick={()=>setAuctionOnly(v=>!v)} title="Only auctionable cards" style={{...sel,color:auctionOnly?C.acc:C.t3,borderColor:auctionOnly?C.acc+"66":C.border,background:auctionOnly?C.accDim:C.bg2}}>{auctionOnly?"✓ AUCTIONABLE":"AUCTIONABLE"}</button>
+      <div style={{flex:1}}/>
+      <span style={{fontSize:7,color:C.t3,fontFamily:mono}}>{loading?"loading…":`${rows.length} cards · ${platform.toUpperCase()}`}</span>
+    </div>
+
+    {err&&<div style={{padding:"6px 9px",marginBottom:6,borderRadius:5,background:C.errDim,border:`1px solid ${C.err}33`,fontSize:8,color:C.err,fontFamily:mono}}>catalog error: {err}</div>}
+
+    <div style={{display:"grid",gridTemplateColumns:"1fr 88px 60px",gap:5,padding:"0 8px 4px",fontSize:6,color:C.t3,fontFamily:mono,letterSpacing:1}}>
+      <span>PLAYER</span><span style={{textAlign:"right"}}>PRICE</span><span style={{textAlign:"right"}}>CHANGE</span>
+    </div>
+
+    {!loading&&rows.length===0&&<div style={{padding:20,textAlign:"center",color:C.t4,fontFamily:mono,fontSize:10}}>{search?`No results for "${search}"`:"No cards"}</div>}
+
+    {rows.map(c=>{
+      const chg=fmtPct(c.pctChange);
+      const cc=c.pctChange==null?C.t4:c.pctChange>0?C.acc:c.pctChange<0?C.err:C.t3;
+      return(<div key={c.pk} style={{display:"grid",gridTemplateColumns:"1fr 88px 60px",gap:5,alignItems:"center",padding:"6px 8px",marginBottom:4,borderRadius:6,background:C.bg2,border:`1px solid ${C.border}`}}>
+        <div style={{minWidth:0}}>
+          <div style={{display:"flex",alignItems:"center",gap:5}}>
+            <span style={{fontSize:9,fontWeight:800,color:C.acc,fontFamily:mono,minWidth:18}}>{c.ovr}</span>
+            <span style={{fontSize:11,fontWeight:700,color:C.t1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.name}</span>
+            {!c.canAuction&&<span style={{fontSize:6,color:C.warn,fontFamily:mono,background:C.warnDim,padding:"1px 3px",borderRadius:2}}>NA</span>}
+          </div>
+          <div style={{fontSize:7,color:C.t3,fontFamily:mono,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{[c.pos,c.program,c.team,c.archetype].filter(Boolean).join(" · ")}</div>
+        </div>
+        <div style={{textAlign:"right",fontSize:11,fontWeight:800,color:c.price>0?C.coin:C.t4,fontFamily:mono}}>{c.price>0?(fPrice(c.price)||c.price):"—"}</div>
+        <div style={{textAlign:"right",fontSize:9,fontWeight:700,color:cc,fontFamily:mono}}>{chg||"—"}</div>
+      </div>);
+    })}
+
+    <div style={{display:"flex",gap:6,alignItems:"center",justifyContent:"center",padding:"8px 0 2px"}}>
+      <button onClick={()=>setPage(p=>Math.max(1,p-1))} disabled={page<=1||loading} style={{padding:"5px 12px",borderRadius:5,border:`1px solid ${C.border}`,background:page<=1?C.bg2:C.bg3,color:page<=1?C.t4:C.t2,fontSize:9,fontFamily:mono,fontWeight:700,cursor:page<=1?"default":"pointer"}}>← PREV</button>
+      <span style={{fontSize:8,color:C.t3,fontFamily:mono}}>PAGE {page}</span>
+      <button onClick={()=>setPage(p=>p+1)} disabled={!hasMore||loading} style={{padding:"5px 12px",borderRadius:5,border:`1px solid ${C.border}`,background:!hasMore?C.bg2:C.bg3,color:!hasMore?C.t4:C.t2,fontSize:9,fontFamily:mono,fontWeight:700,cursor:!hasMore?"default":"pointer"}}>NEXT →</button>
+    </div>
+  </div>);
+}
+
 export default function App(){
   const[loaded,setLoaded]=useState(false);
+  const[tab,setTab]=useLS("mut.tab","snipe");
   const[search,setSearch]=useState("");
   const[players,setPlayers]=useState(INIT);
   const[lr,setLr]=useState("Initial · Mar 2 2026 · mut.gg verified");
@@ -339,7 +415,7 @@ export default function App(){
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:7,flexWrap:"wrap"}}>
         <div style={{display:"flex",alignItems:"center",gap:7}}>
           <div style={{width:28,height:28,borderRadius:6,display:"flex",alignItems:"center",justifyContent:"center",background:`linear-gradient(135deg,${C.acc},${C.elite})`,fontSize:13,fontWeight:900}}>◈</div>
-          <div><div style={{fontSize:15,fontWeight:800,letterSpacing:-.5}}>MUT <span style={{color:C.acc}}>ALPHA</span> <span style={{fontSize:10,color:C.acc}}>🎯 SNIPE</span></div><div style={{fontSize:7,color:C.t3,fontFamily:"'Space Mono',monospace",letterSpacing:1}}>AUCTION SNIPER · MUT.GG PRICED</div></div>
+          <div><div style={{fontSize:15,fontWeight:800,letterSpacing:-.5}}>MUT <span style={{color:C.acc}}>ALPHA</span></div><div style={{fontSize:7,color:C.t3,fontFamily:"'Space Mono',monospace",letterSpacing:1}}>SNIPER · CATALOG · MUT.GG PRICED</div></div>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:4}}>
           <div style={{display:"flex",alignItems:"center",gap:3,padding:"2px 7px",background:C.accDim,borderRadius:4,border:`1px solid ${C.acc}33`}}>
@@ -364,8 +440,13 @@ export default function App(){
       </div>
     </div>
 
-    <div style={{padding:"9px 15px 36px",maxHeight:"calc(100vh - 110px)",overflowY:"auto"}}>
-      <SnipePanel players={players} search={search} listed={snListed} setListed={setSnListed} mvOv={snMvOv} setMvOv={setSnMvOv} profitMin={profitMin} setProfitMin={setProfitMin} discountMin={discountMin} setDiscountMin={setDiscountMin} matchMode={matchMode} setMatchMode={setMatchMode}/>
+    <div style={{display:"flex",gap:3,padding:"8px 15px 0"}}>
+      {[{k:"snipe",l:"🎯 Snipe"},{k:"catalog",l:"📊 Catalog"}].map(t=><button key={t.k} onClick={()=>setTab(t.k)} style={{padding:"5px 14px",borderRadius:"6px 6px 0 0",border:`1px solid ${tab===t.k?C.borderHi:C.border}`,borderBottom:tab===t.k?`1px solid ${C.bg}`:`1px solid ${C.border}`,cursor:"pointer",fontSize:10,fontWeight:700,fontFamily:"'Space Mono',monospace",background:tab===t.k?C.bg3:"transparent",color:tab===t.k?C.t1:C.t3,marginBottom:-1,position:"relative",zIndex:1}}>{t.l}</button>)}
+    </div>
+
+    <div style={{padding:"9px 15px 36px",maxHeight:"calc(100vh - 150px)",overflowY:"auto",borderTop:`1px solid ${C.border}`}}>
+      {tab==="snipe"&&<SnipePanel players={players} search={search} listed={snListed} setListed={setSnListed} mvOv={snMvOv} setMvOv={setSnMvOv} profitMin={profitMin} setProfitMin={setProfitMin} discountMin={discountMin} setDiscountMin={setDiscountMin} matchMode={matchMode} setMatchMode={setMatchMode}/>}
+      {tab==="catalog"&&<CatalogPanel platform={plat} search={search}/>}
     </div>
   </div>);
 }
