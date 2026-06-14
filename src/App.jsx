@@ -105,6 +105,31 @@ function parseCoins(str){
   return Math.round(n);
 }
 
+// Normalize a player name for matching: lowercase, strip accents, parentheticals,
+// name suffixes (Jr/Sr/II-V), and all punctuation/spacing. Mirrors api/mutgg.js's
+// norm+searchName approach so live-feed listings match the roster reliably.
+function normName(s){
+  return String(s||"")
+    .normalize("NFKD").replace(/[̀-ͯ]/g,"")   // strip accents
+    .toLowerCase()
+    .replace(/\([^)]*\)/g,"")                            // drop parentheticals
+    .replace(/\b(jr|sr|ii|iii|iv|v)\b\.?/g,"")           // drop name suffixes
+    .replace(/[^a-z0-9]/g,"");                            // drop all punctuation/space
+}
+
+// Deterministic 0–100 "heat" score for a snipe — blends profit margin (profit vs
+// market value) and discount %. Higher = hotter. Cheap; no randomness.
+function heatScore(profit,disc,mv){
+  if(profit==null||disc==null||!mv)return 0;
+  const marginPct=Math.max(0,Math.min(100,(profit/mv)*100)); // after-tax profit as % of mv
+  const d=Math.max(0,Math.min(100,disc));
+  return Math.max(0,Math.min(100,Math.round(marginPct*0.6+d*0.4)));
+}
+// Color ramp for a heat score: hot→acc, mid→warn, low→t3.
+function heatColor(h){return h>=66?C.acc:h>=33?C.warn:C.t3;}
+// Small colored heat badge for a snipe row — higher heat = hotter color.
+function HeatBadge({h}){const c=heatColor(h);return<span title={`heat ${h}/100`} style={{fontSize:7,fontWeight:800,fontFamily:"'Space Mono',monospace",color:c,background:c+"22",border:`1px solid ${c}55`,borderRadius:3,padding:"0 3px",lineHeight:1.4,flexShrink:0}}>{h}</span>;}
+
 const AH_TAX=0.10;
 
 function SnipePanel({players,search,listed,setListed,mvOv,setMvOv,profitMin,setProfitMin,discountMin,setDiscountMin,matchMode,setMatchMode}){
@@ -120,7 +145,17 @@ function SnipePanel({players,search,listed,setListed,mvOv,setMvOv,profitMin,setP
   const[arrPath,setArrPath]=useLS("mut.feed.arrPath",""),[nameKey,setNameKey]=useLS("mut.feed.nameKey",""),[priceKey,setPriceKey]=useLS("mut.feed.priceKey","");
   const[listings,setListings]=useState([]),[feedStat,setFeedStat]=useState(null);
   const[soundOn,setSoundOn]=useLS("mut.feed.sound",true);
+  const[notifyOn,setNotifyOn]=useLS("mut.feed.notify",false);
+  const[feedAck,setFeedAck]=useLS("mut.feed.ack",false);
+  const[guideOpen,setGuideOpen]=useState(false);
+  const[notifyPerm,setNotifyPerm]=useState(typeof Notification!=="undefined"?Notification.permission:"unsupported");
   const prevSnipes=useRef(new Set());
+
+  // Request desktop-notification permission (user-gesture from the 🛎 button)
+  const askNotify=()=>{
+    if(typeof Notification==="undefined"){setNotifyPerm("unsupported");return;}
+    Notification.requestPermission().then(p=>setNotifyPerm(p)).catch(()=>{});
+  };
 
   useEffect(()=>{
     if(!feedOn||!feedUrl)return;
@@ -144,10 +179,16 @@ function SnipePanel({players,search,listed,setListed,mvOv,setMvOv,profitMin,setP
     return()=>{alive=false;clearInterval(id);};
   },[feedOn,feedUrl,feedTok,feedBody,feedSecs,arrPath,nameKey,priceKey]);
 
+  // Precompute normalized roster names once per roster change for matching.
+  const normRoster=useMemo(()=>players.map(p=>({p,nn:normName(p.name)})),[players]);
   const feedRows=useMemo(()=>{
     return listings.map(l=>{
-      const nm=(l.name||"").toLowerCase();
-      const mp=players.find(p=>p.name.toLowerCase()===nm)||players.find(p=>nm&&nm.includes(p.name.toLowerCase()));
+      const nn=normName(l.name);
+      // 1) exact normalized equality, then 2) normalized substring/startsWith fallback
+      const mp=(nn&&(
+        normRoster.find(x=>x.nn===nn)||
+        normRoster.find(x=>x.nn&&x.nn.length>=5&&nn.length>=5&&(nn.startsWith(x.nn)||x.nn.startsWith(nn)||nn.includes(x.nn)))
+      ))?.p||null;
       const key=mp?`${mp.name}__${mp.card}__${mp.pos}__${mp.sub}`:null;
       const mv=mp?(parseCoins(mvOv[key])||mp.price||0):0;
       const has=mv>0&&l.buyNow>0;
@@ -155,17 +196,31 @@ function SnipePanel({players,search,listed,setListed,mvOv,setMvOv,profitMin,setP
       const disc=has?Math.round((mv-l.buyNow)/mv*100):null;
       const profitOk=profit!=null&&profit>=profitMin,discOk=disc!=null&&disc>=discountMin;
       const isSnipe=has&&(matchMode==="all"?(profitOk&&discOk):(profitOk||discOk));
-      return{l,mp,mv,profit,disc,isSnipe};
+      const heat=isSnipe?heatScore(profit,disc,mv):0;
+      return{l,mp,mv,profit,disc,isSnipe,heat};
     }).sort((a,b)=>{if(a.isSnipe!==b.isSnipe)return a.isSnipe?-1:1;return (b.profit??-1e12)-(a.profit??-1e12);});
-  },[listings,players,mvOv,profitMin,discountMin,matchMode]);
+  },[listings,normRoster,mvOv,profitMin,discountMin,matchMode]);
   const feedSnipes=feedRows.filter(r=>r.isSnipe).length;
 
-  // Beep once when a snipe signature appears that wasn't in the previous poll
+  // Beep / desktop-notify once per snipe signature that wasn't in the previous poll
   useEffect(()=>{
-    const cur=new Set(feedRows.filter(r=>r.isSnipe).map(r=>`${r.l.name}@${r.l.buyNow}`));
-    if(feedOn){let fresh=false;cur.forEach(s=>{if(!prevSnipes.current.has(s))fresh=true;});if(fresh&&soundOn)beep();}
+    const snipes=feedRows.filter(r=>r.isSnipe);
+    const cur=new Set(snipes.map(r=>`${r.l.name}@${r.l.buyNow}`));
+    if(feedOn){
+      const freshRows=snipes.filter(r=>!prevSnipes.current.has(`${r.l.name}@${r.l.buyNow}`));
+      if(freshRows.length){
+        if(soundOn)beep();
+        if(notifyOn&&notifyPerm==="granted"&&typeof Notification!=="undefined"){
+          // one notification per fresh snipe signature (throttled by the signature set)
+          freshRows.forEach(r=>{try{new Notification("🎯 MUT Alpha snipe",{
+            body:`${r.l.name} @ ${fPrice(r.l.buyNow)||r.l.buyNow} · ${fSigned(r.profit)} (${r.disc}%) · heat ${r.heat}`,
+            tag:`${r.l.name}@${r.l.buyNow}`,
+          });}catch{}});
+        }
+      }
+    }
     prevSnipes.current=cur;
-  },[feedRows,feedOn,soundOn]);
+  },[feedRows,feedOn,soundOn,notifyOn,notifyPerm]);
 
   const fld=(label,val,setter,ph,type)=>(<label style={{display:"block",minWidth:0}}>
     <div style={{fontSize:6,color:C.t3,fontFamily:mono,letterSpacing:1,marginBottom:2}}>{label}</div>
@@ -187,7 +242,8 @@ function SnipePanel({players,search,listed,setListed,mvOv,setMvOv,profitMin,setP
         const profitOk=profit!=null&&profit>=profitMin;
         const discOk=disc!=null&&disc>=discountMin;
         const isSnipe=hasDeal&&(matchMode==="all"?(profitOk&&discOk):(profitOk||discOk));
-        return{p,key,mv,lp,hasDeal,profit,disc,profitOk,discOk,isSnipe};
+        const heat=isSnipe?heatScore(profit,disc,mv):0;
+        return{p,key,mv,lp,hasDeal,profit,disc,profitOk,discOk,isSnipe,heat};
       })
       .sort((a,b)=>{
         if(a.isSnipe!==b.isSnipe)return a.isSnipe?-1:1;
@@ -237,6 +293,25 @@ function SnipePanel({players,search,listed,setListed,mvOv,setMvOv,profitMin,setP
         <div style={{fontSize:7,color:C.t3,fontFamily:mono,lineHeight:1.5,marginBottom:7,padding:"5px 7px",background:C.bg3,borderRadius:4,border:`1px solid ${C.border}`}}>
           Capture an auction <b style={{color:C.t2}}>search</b> request from the Madden Companion App (mitmproxy/Charles), then paste the endpoint, your session token, and the JSON paths to map the response. Buy/bid/sell is blocked at the proxy — this only reads &amp; displays.
         </div>
+
+        {/* token-capture wizard */}
+        <div style={{marginBottom:7,borderRadius:4,border:`1px solid ${C.border}`,overflow:"hidden"}}>
+          <button onClick={()=>setGuideOpen(o=>!o)} style={{width:"100%",display:"flex",alignItems:"center",gap:6,padding:"6px 8px",background:C.bg3,border:"none",cursor:"pointer",textAlign:"left"}}>
+            <span style={{fontSize:8,fontWeight:700,color:C.blue,fontFamily:mono,letterSpacing:1}}>📥 HOW TO CAPTURE YOUR FEED</span>
+            <div style={{flex:1}}/>
+            <span style={{fontSize:7,color:C.t4,transform:guideOpen?"rotate(180deg)":"",display:"inline-block",transition:"transform .2s"}}>▼</span>
+          </button>
+          {guideOpen&&<ol style={{margin:0,padding:"7px 8px 8px 22px",fontSize:7.5,color:C.t2,fontFamily:mono,lineHeight:1.7,animation:"fadeIn .2s"}}>
+            <li>Install the <b style={{color:C.t1}}>Madden NFL Companion</b> app on your phone and sign in to your EA account.</li>
+            <li>On your computer install an HTTPS-intercepting proxy — <b style={{color:C.t1}}>mitmproxy</b> (free) or <b style={{color:C.t1}}>Charles</b> / Fiddler.</li>
+            <li>Set the phone's Wi-Fi proxy to your computer, then open the proxy's CA cert URL on the phone and trust it so HTTPS can be decrypted.</li>
+            <li>In Companion, open the Auction House and run a normal <b style={{color:C.t1}}>search</b>. Watch the proxy for the request that returns the listings JSON.</li>
+            <li>Copy the request's <b style={{color:C.t1}}>endpoint URL</b> (the search one) into <span style={{color:C.acc}}>ENDPOINT URL</span> below.</li>
+            <li>Copy the <b style={{color:C.t1}}>auth header value</b> (Authorization / X-BLAZE-SESSION / X-Pin) into <span style={{color:C.acc}}>AUTH HEADER VALUE</span>.</li>
+            <li>Inspect the JSON: set <span style={{color:C.acc}}>LISTINGS ARRAY PATH</span> to the array (e.g. <code style={{color:C.t1}}>data.auctionInfo</code>), and <span style={{color:C.acc}}>NAME KEY</span> / <span style={{color:C.acc}}>BUY-NOW KEY</span> to the per-item dotted paths (e.g. <code style={{color:C.t1}}>itemData.fullName</code>, <code style={{color:C.t1}}>buyNowPrice</code>).</li>
+            <li>If the request was a POST, paste its JSON into <span style={{color:C.acc}}>REQUEST BODY JSON</span>; otherwise leave it blank for a GET.</li>
+          </ol>}
+        </div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:6}}>
           {fld("ENDPOINT URL (search)",feedUrl,setFeedUrl,"https://...search")}
           {fld("AUTH HEADER VALUE",feedTok,setFeedTok,"Bearer ... / X-Pin token","password")}
@@ -249,10 +324,20 @@ function SnipePanel({players,search,listed,setListed,mvOv,setMvOv,profitMin,setP
           <div style={{fontSize:6,color:C.t3,fontFamily:mono,letterSpacing:1,marginBottom:2}}>REQUEST BODY JSON (optional — leave blank for GET)</div>
           <textarea value={feedBody} onChange={e=>setFeedBody(e.target.value)} placeholder='{"sort":"...","filter":...}' rows={2} style={{...inp,fontSize:9,padding:"4px 6px",resize:"vertical"}}/>
         </label>
+        {/* ToS acknowledgement gate — required before the feed can start */}
+        <label style={{display:"flex",gap:7,alignItems:"flex-start",marginBottom:7,padding:"7px 8px",borderRadius:5,background:C.errDim,border:`1px solid ${C.err}66`,cursor:"pointer"}}>
+          <input type="checkbox" checked={feedAck} onChange={e=>setFeedAck(e.target.checked)} style={{marginTop:1,accentColor:C.err,cursor:"pointer",flexShrink:0}}/>
+          <span style={{fontSize:7.5,color:C.warn,fontFamily:mono,lineHeight:1.6}}>
+            <b style={{color:C.err}}>⚠ I understand</b> this live feed uses <b style={{color:C.t1}}>my own captured EA session token</b>, that intercepting Companion traffic <b style={{color:C.t1}}>violates EA's User Agreement</b>, and that it <b style={{color:C.err}}>risks a permanent account ban</b> even though this tool is read-only. I accept that risk on an account I'm willing to lose.
+          </span>
+        </label>
         <div style={{display:"flex",gap:6}}>
-          <button onClick={()=>setFeedOn(v=>!v)} disabled={!feedUrl} style={{flex:1,padding:"6px",borderRadius:5,border:`1px solid ${feedOn?C.err+"66":C.acc+"66"}`,background:feedOn?C.errDim:C.accDim,color:feedOn?C.err:C.acc,fontSize:9,fontWeight:800,fontFamily:mono,letterSpacing:1,cursor:feedUrl?"pointer":"not-allowed",opacity:feedUrl?1:.5}}>{feedOn?"■ STOP POLLING":"▶ START LIVE FEED"}</button>
+          <button onClick={()=>setFeedOn(v=>!v)} disabled={!feedOn&&!(feedUrl&&feedAck)} title={!feedUrl?"Enter a feed endpoint URL first":!feedAck?"Tick the acknowledgement to enable the feed":""} style={{flex:1,padding:"6px",borderRadius:5,border:`1px solid ${feedOn?C.err+"66":C.acc+"66"}`,background:feedOn?C.errDim:C.accDim,color:feedOn?C.err:C.acc,fontSize:9,fontWeight:800,fontFamily:mono,letterSpacing:1,cursor:(feedOn||(feedUrl&&feedAck))?"pointer":"not-allowed",opacity:(feedOn||(feedUrl&&feedAck))?1:.5}}>{feedOn?"■ STOP POLLING":"▶ START LIVE FEED"}</button>
           <button onClick={()=>setSoundOn(v=>!v)} title="Beep on new snipe" style={{padding:"6px 10px",borderRadius:5,border:`1px solid ${soundOn?C.acc+"66":C.border}`,background:soundOn?C.accDim:C.bg3,color:soundOn?C.acc:C.t4,fontSize:11,cursor:"pointer"}}>{soundOn?"🔔":"🔕"}</button>
+          <button onClick={()=>{if(notifyPerm!=="granted"){askNotify();}else{setNotifyOn(v=>!v);}}} title={notifyPerm==="unsupported"?"Desktop notifications unsupported":notifyPerm!=="granted"?"Click to allow desktop notifications":(notifyOn?"Desktop alerts on":"Desktop alerts off")} disabled={notifyPerm==="unsupported"} style={{padding:"6px 10px",borderRadius:5,border:`1px solid ${notifyOn&&notifyPerm==="granted"?C.acc+"66":C.border}`,background:notifyOn&&notifyPerm==="granted"?C.accDim:C.bg3,color:notifyPerm==="unsupported"?C.t4:notifyOn&&notifyPerm==="granted"?C.acc:notifyPerm==="denied"?C.err:C.t4,fontSize:11,cursor:notifyPerm==="unsupported"?"not-allowed":"pointer",opacity:notifyPerm==="unsupported"?.5:1}}>{notifyPerm==="granted"&&notifyOn?"🛎":"🔔"}</button>
         </div>
+        {notifyPerm==="granted"&&!notifyOn&&<div style={{fontSize:6.5,color:C.t4,fontFamily:mono,marginTop:4}}>Desktop alerts allowed — click 🔔 to enable per-snipe notifications.</div>}
+        {notifyPerm==="denied"&&<div style={{fontSize:6.5,color:C.err,fontFamily:mono,marginTop:4}}>Desktop notifications blocked in your browser settings.</div>}
       </div>}
     </div>
 
@@ -263,6 +348,7 @@ function SnipePanel({players,search,listed,setListed,mvOv,setMvOv,profitMin,setP
         {feedRows.map((r,i)=>(<div key={i} style={{display:"grid",gridTemplateColumns:"1fr 74px 64px 48px",gap:5,alignItems:"center",padding:"4px 7px",borderRadius:5,background:r.isSnipe?C.accDim:C.bg3,border:`1px solid ${r.isSnipe?C.acc+"55":C.border}`}}>
           <div style={{minWidth:0,display:"flex",alignItems:"center",gap:4}}>
             {r.isSnipe&&<span style={{fontSize:8}}>🎯</span>}
+            {r.isSnipe&&<HeatBadge h={r.heat}/>}
             <span style={{fontSize:10,fontWeight:600,color:C.t1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.l.name}</span>
             {!r.mp&&<span style={{fontSize:6,color:C.t4,fontFamily:mono}}>no mv</span>}
           </div>
@@ -292,6 +378,7 @@ function SnipePanel({players,search,listed,setListed,mvOv,setMvOv,profitMin,setP
         <div style={{minWidth:0}}>
           <div style={{display:"flex",alignItems:"center",gap:4}}>
             {r.isSnipe&&<span style={{fontSize:8,color:C.acc}}>🎯</span>}
+            {r.isSnipe&&<HeatBadge h={r.heat}/>}
             <span style={{fontSize:11,fontWeight:700,color:C.t1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.p.name}</span>
           </div>
           <div style={{fontSize:7,color:C.t3,fontFamily:mono}}>{r.p.pos}{r.p.sub&&r.p.sub!==r.p.pos?` · ${r.p.sub}`:""} · {r.p.card} · {r.p.ovr}</div>
