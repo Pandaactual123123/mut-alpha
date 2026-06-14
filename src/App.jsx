@@ -240,7 +240,7 @@ function SnipePanel({players,search,listed,setListed,mvOv,setMvOv,profitMin,setP
         if(soundOn)beep();
         if(notifyOn&&notifyPerm==="granted"&&typeof Notification!=="undefined"){
           // one notification per fresh snipe signature (throttled by the signature set)
-          freshRows.forEach(r=>{try{new Notification("🎯 MUT Alpha snipe",{
+          freshRows.forEach(r=>{try{new Notification("🎯 Panda Actual Sniper snipe",{
             body:`${r.l.name} @ ${fPrice(r.l.buyNow)||r.l.buyNow} · ${fSigned(r.profit)} (${r.disc}%) · heat ${r.heat}`,
             tag:`${r.l.name}@${r.l.buyNow}`,
           });}catch{}});
@@ -676,7 +676,7 @@ function PricingModal({onClose,user,isPro,onUpgrade,onNeedAuth}){
 
   return(<Modal onClose={onClose} width={380}>
     <div style={{padding:"16px 16px 6px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-      <div style={{fontSize:14,fontWeight:800,letterSpacing:-.3}}>MUT Alpha <span style={{color:C.elite}}>Pro</span></div>
+      <div style={{fontSize:14,fontWeight:800,letterSpacing:-.3}}>Panda Actual Sniper <span style={{color:C.elite}}>Pro</span></div>
       <button onClick={onClose} style={{background:"none",border:"none",color:C.t3,fontSize:16,cursor:"pointer",lineHeight:1,padding:2}}>✕</button>
     </div>
     <div style={{padding:"4px 16px 16px"}}>
@@ -764,7 +764,7 @@ export default function App(){
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:7,flexWrap:"wrap"}}>
         <div style={{display:"flex",alignItems:"center",gap:7}}>
           <div style={{width:28,height:28,borderRadius:6,display:"flex",alignItems:"center",justifyContent:"center",background:`linear-gradient(135deg,${C.acc},${C.elite})`,fontSize:13,fontWeight:900}}>◈</div>
-          <div><div style={{fontSize:15,fontWeight:800,letterSpacing:-.5}}>MUT <span style={{color:C.acc}}>ALPHA</span></div><div style={{fontSize:7,color:C.t3,fontFamily:"'Space Mono',monospace",letterSpacing:1}}>SNIPER · CATALOG · MUT.GG PRICED</div></div>
+          <div><div style={{fontSize:15,fontWeight:800,letterSpacing:-.5}}>PANDA ACTUAL <span style={{color:C.acc}}>SNIPER</span></div><div style={{fontSize:7,color:C.t3,fontFamily:"'Space Mono',monospace",letterSpacing:1}}>SNIPE · CATALOG · MUT.GG PRICED</div></div>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:4}}>
           <div style={{display:"flex",alignItems:"center",gap:3,padding:"2px 7px",background:C.accDim,borderRadius:4,border:`1px solid ${C.acc}33`}}>
@@ -823,7 +823,7 @@ export default function App(){
           <span style={{fontSize:7,fontWeight:700,letterSpacing:1.2,color:C.acc,fontFamily:"'Space Mono',monospace"}}>LIVE MADDEN 26 MARKET INTEL</span>
         </div>
         <div style={{fontSize:narrow?17:21,fontWeight:900,letterSpacing:-.6,lineHeight:1.15,maxWidth:560}}>Catch the underpriced cards <span style={{color:C.acc}}>before the board does</span>.</div>
-        <div style={{fontSize:narrow?10:11,color:C.t2,fontFamily:"'Outfit',sans-serif",lineHeight:1.55,marginTop:7,maxWidth:520}}>MUT Alpha reads the live auction-house market so you don't have to. Set your margin, let the <b style={{color:C.t1}}>Snipe</b> engine flag every flip worth taking, or sweep the priced <b style={{color:C.t1}}>Catalog</b> to see where the whole market is moving.</div>
+        <div style={{fontSize:narrow?10:11,color:C.t2,fontFamily:"'Outfit',sans-serif",lineHeight:1.55,marginTop:7,maxWidth:520}}>Panda Actual Sniper reads the live auction-house market so you don't have to. Set your margin, let the <b style={{color:C.t1}}>Snipe</b> engine flag every flip worth taking, or sweep the priced <b style={{color:C.t1}}>Catalog</b> to see where the whole market is moving.</div>
         <div style={{display:"flex",gap:14,flexWrap:"wrap",marginTop:11}}>
           {[["🎯","Snipe","margin-aware deal radar"],["📊","Catalog","live mut.gg priced index"],["📈","Trends","real per-card price history"]].map(([ic,h,s])=>(
             <div key={h} style={{display:"flex",alignItems:"center",gap:7,minWidth:0}}>
@@ -851,7 +851,7 @@ export default function App(){
       <div style={{maxWidth:680,margin:"0 auto"}}>
         <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:7}}>
           <div style={{width:20,height:20,borderRadius:5,display:"flex",alignItems:"center",justifyContent:"center",background:`linear-gradient(135deg,${C.acc},${C.elite})`,fontSize:10,fontWeight:900}}>◈</div>
-          <div style={{fontSize:11,fontWeight:800,letterSpacing:-.4}}>MUT <span style={{color:C.acc}}>ALPHA</span></div>
+          <div style={{fontSize:11,fontWeight:800,letterSpacing:-.4}}>PANDA ACTUAL <span style={{color:C.acc}}>SNIPER</span></div>
         </div>
         <div style={{fontSize:9,color:C.t2,fontFamily:"'Outfit',sans-serif",lineHeight:1.55,marginBottom:10,maxWidth:560}}>
           A scrappy market terminal for Ultimate Team flippers — built to surface the snipes and read the board, fast.
@@ -862,7 +862,7 @@ export default function App(){
           <div>Pricing reflects third-party community data (mut.gg) and may lag the in-game market. No coins, accounts, or in-game value are bought, sold, or transferred here.</div>
           <div>The optional <button onClick={()=>{setHeroDismissed(true);setTab("snipe");}} style={{background:"none",border:"none",padding:0,color:C.warn,fontFamily:"'Space Mono',monospace",fontSize:7.5,fontWeight:700,cursor:"pointer",textDecoration:"underline"}}>live feed</button> reads your own captured EA session and may violate EA's terms — see the in-app risk notice before enabling it. Use it on an account you accept the risk of losing.</div>
         </div>
-        <div style={{fontSize:7,color:C.t4,fontFamily:"'Space Mono',monospace",letterSpacing:.5,borderTop:`1px solid ${C.border}`,paddingTop:8}}>© {new Date().getFullYear()} MUT Alpha · An indie tool, built by one flipper for flippers.</div>
+        <div style={{fontSize:7,color:C.t4,fontFamily:"'Space Mono',monospace",letterSpacing:.5,borderTop:`1px solid ${C.border}`,paddingTop:8}}>© {new Date().getFullYear()} Panda Actual Sniper · An indie tool, built by one flipper for flippers.</div>
       </div>
     </footer>
 

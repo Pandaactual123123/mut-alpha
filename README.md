@@ -1,4 +1,4 @@
-# MUT Alpha — Snipe
+# Panda Actual Sniper
 
 MUT 26 auction sniper. Compares listed/buy-now prices against live mut.gg market values and flags profitable flips after AH tax.
 
