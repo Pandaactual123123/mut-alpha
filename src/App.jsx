@@ -146,7 +146,7 @@ function HeatBadge({h}){const c=heatColor(h);return<span title={`heat ${h}/100`}
 
 const AH_TAX=0.10;
 
-function SnipePanel({players,search,listed,setListed,mvOv,setMvOv,profitMin,setProfitMin,discountMin,setDiscountMin,matchMode,setMatchMode}){
+function SnipePanel({players,search,listed,setListed,mvOv,setMvOv,profitMin,setProfitMin,discountMin,setDiscountMin,matchMode,setMatchMode,platform="ps5"}){
   const mono="'Space Mono',monospace";
   const inp={background:C.bg,border:`1px solid ${C.border}`,borderRadius:4,color:C.t1,fontSize:10,fontFamily:mono,outline:"none",padding:"4px 6px",width:"100%"};
   const setL=(k,v)=>setListed(p=>({...p,[k]:v}));
@@ -163,7 +163,21 @@ function SnipePanel({players,search,listed,setListed,mvOv,setMvOv,profitMin,setP
   const[feedAck,setFeedAck]=useLS("mut.feed.ack",false);
   const[guideOpen,setGuideOpen]=useState(false);
   const[notifyPerm,setNotifyPerm]=useState(typeof Notification!=="undefined"?Notification.permission:"unsupported");
+  const[scanRes,setScanRes]=useState(null),[scanning,setScanning]=useState(false);
   const prevSnipes=useRef(new Set());
+
+  // On-demand server-side scan: one read-only fetch + server margin math.
+  async function doScan(){
+    if(scanning||!feedUrl)return;setScanning(true);setScanRes(null);
+    const marketValues={};players.forEach(p=>{const k=`${p.name}__${p.card}__${p.pos}__${p.sub}`;const v=parseCoins(mvOv[k])||p.price||0;if(v>0)marketValues[p.name]=v;});
+    try{
+      const r=await fetch("/api/snipe-scan",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
+        feed:{endpoint:feedUrl,method:feedBody.trim()?"POST":"GET",token:feedTok,body:feedBody.trim()||undefined,arrPath,nameKey,priceKey},
+        platform,marketValues,profitMin,discountMin,matchMode})});
+      const j=await r.json();setScanRes(j);if(j.ok&&j.summary?.snipes&&soundOn)beep();
+    }catch(e){setScanRes({ok:false,error:e.message});}
+    setScanning(false);
+  }
 
   // Request desktop-notification permission (user-gesture from the 🛎 button)
   const askNotify=()=>{
@@ -348,12 +362,28 @@ function SnipePanel({players,search,listed,setListed,mvOv,setMvOv,profitMin,setP
         <div style={{display:"flex",gap:6}}>
           <button onClick={()=>setFeedOn(v=>!v)} disabled={!feedOn&&!(feedUrl&&feedAck)} title={!feedUrl?"Enter a feed endpoint URL first":!feedAck?"Tick the acknowledgement to enable the feed":""} style={{flex:1,padding:"6px",borderRadius:5,border:`1px solid ${feedOn?C.err+"66":C.acc+"66"}`,background:feedOn?C.errDim:C.accDim,color:feedOn?C.err:C.acc,fontSize:9,fontWeight:800,fontFamily:mono,letterSpacing:1,cursor:(feedOn||(feedUrl&&feedAck))?"pointer":"not-allowed",opacity:(feedOn||(feedUrl&&feedAck))?1:.5}}>{feedOn?"■ STOP POLLING":"▶ START LIVE FEED"}</button>
           <button onClick={()=>setSoundOn(v=>!v)} title="Beep on new snipe" style={{padding:"6px 10px",borderRadius:5,border:`1px solid ${soundOn?C.acc+"66":C.border}`,background:soundOn?C.accDim:C.bg3,color:soundOn?C.acc:C.t4,fontSize:11,cursor:"pointer"}}>{soundOn?"🔔":"🔕"}</button>
+          <button onClick={doScan} disabled={scanning||!(feedUrl&&feedAck)} title={!feedUrl?"Enter an endpoint first":!feedAck?"Tick the acknowledgement first":"One read-only server scan (token not stored)"} style={{padding:"6px 10px",borderRadius:5,border:`1px solid ${C.elite}66`,background:C.eliteDim,color:(feedUrl&&feedAck)?C.elite:C.t4,fontSize:9,fontWeight:800,fontFamily:mono,letterSpacing:.5,cursor:(scanning||!(feedUrl&&feedAck))?"default":"pointer",opacity:(feedUrl&&feedAck)?1:.5}}>{scanning?"…":"⚡ SCAN"}</button>
           <button onClick={()=>{if(notifyPerm!=="granted"){askNotify();}else{setNotifyOn(v=>!v);}}} title={notifyPerm==="unsupported"?"Desktop notifications unsupported":notifyPerm!=="granted"?"Click to allow desktop notifications":(notifyOn?"Desktop alerts on":"Desktop alerts off")} disabled={notifyPerm==="unsupported"} style={{padding:"6px 10px",borderRadius:5,border:`1px solid ${notifyOn&&notifyPerm==="granted"?C.acc+"66":C.border}`,background:notifyOn&&notifyPerm==="granted"?C.accDim:C.bg3,color:notifyPerm==="unsupported"?C.t4:notifyOn&&notifyPerm==="granted"?C.acc:notifyPerm==="denied"?C.err:C.t4,fontSize:11,cursor:notifyPerm==="unsupported"?"not-allowed":"pointer",opacity:notifyPerm==="unsupported"?.5:1}}>{notifyPerm==="granted"&&notifyOn?"🛎":"🔔"}</button>
         </div>
         {notifyPerm==="granted"&&!notifyOn&&<div style={{fontSize:6.5,color:C.t4,fontFamily:mono,marginTop:4}}>Desktop alerts allowed — click 🔔 to enable per-snipe notifications.</div>}
         {notifyPerm==="denied"&&<div style={{fontSize:6.5,color:C.err,fontFamily:mono,marginTop:4}}>Desktop notifications blocked in your browser settings.</div>}
       </div>}
     </div>
+
+    {/* server scan results (on-demand, read-only) */}
+    {scanRes&&<div style={{marginBottom:7,padding:"7px 9px",borderRadius:7,background:C.bg2,border:`1px solid ${scanRes.ok?C.elite+"44":C.err+"44"}`}}>
+      {!scanRes.ok&&<div style={{fontSize:8,color:C.err,fontFamily:mono}}>scan error: {scanRes.error||"failed"}</div>}
+      {scanRes.ok&&<>
+        <div style={{fontSize:7,color:C.t3,fontFamily:mono,letterSpacing:1,marginBottom:5}}>⚡ SERVER SCAN · {scanRes.summary.scanned} scanned · {scanRes.summary.valued} valued · {scanRes.summary.snipes} snipe{scanRes.summary.snipes===1?"":"s"}</div>
+        {scanRes.snipes.length===0&&<div style={{fontSize:8,color:C.t4,fontFamily:mono}}>No snipes at your thresholds.</div>}
+        {scanRes.snipes.slice(0,12).map((s,i)=>(<div key={i} style={{display:"grid",gridTemplateColumns:"minmax(110px,1fr) 70px 64px 44px",gap:5,alignItems:"center",padding:"4px 6px",borderRadius:5,marginBottom:3,background:C.accDim,border:`1px solid ${C.acc}44`}}>
+          <div style={{display:"flex",alignItems:"center",gap:4,minWidth:0}}><HeatBadge h={s.heat}/><span style={{fontSize:10,fontWeight:600,color:C.t1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.name}</span></div>
+          <div style={{textAlign:"right",fontSize:10,fontWeight:700,color:C.warn,fontFamily:mono}}>{fPrice(s.buyNow)||s.buyNow}</div>
+          <div style={{textAlign:"right",fontSize:10,fontWeight:800,color:C.acc,fontFamily:mono}}>{fSigned(s.profit)}</div>
+          <div style={{textAlign:"right",fontSize:9,fontWeight:700,color:C.acc,fontFamily:mono}}>{s.disc!=null?s.disc+"%":"—"}</div>
+        </div>))}
+      </>}
+    </div>}
 
     {/* live listings */}
     {feedOn&&<div style={{marginBottom:7}}>
@@ -812,7 +842,7 @@ export default function App(){
     </div>
 
     <div style={{padding:"9px 15px 36px",maxHeight:"calc(100vh - 150px)",overflowY:"auto",borderTop:`1px solid ${C.border}`}}>
-      {tab==="snipe"&&<SnipePanel players={players} search={search} listed={snListed} setListed={setSnListed} mvOv={snMvOv} setMvOv={setSnMvOv} profitMin={profitMin} setProfitMin={setProfitMin} discountMin={discountMin} setDiscountMin={setDiscountMin} matchMode={matchMode} setMatchMode={setMatchMode}/>}
+      {tab==="snipe"&&<SnipePanel players={players} search={search} listed={snListed} setListed={setSnListed} mvOv={snMvOv} setMvOv={setSnMvOv} profitMin={profitMin} setProfitMin={setProfitMin} discountMin={discountMin} setDiscountMin={setDiscountMin} matchMode={matchMode} setMatchMode={setMatchMode} platform={plat}/>}
       {tab==="catalog"&&<CatalogPanel platform={plat} search={search} onAdd={addToSnipe} addedKeys={addedKeys} isPro={isPro} onUpgrade={()=>setPricingOpen(true)}/>}
     </div>
 
