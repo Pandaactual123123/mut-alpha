@@ -84,6 +84,20 @@ function useLS(key,init){
   return[v,setV];
 }
 
+// Track whether the viewport is phone-narrow so dense rows can simplify.
+// Lightweight: one matchMedia listener, cleaned up on unmount.
+function useIsNarrow(bp=560){
+  const q=`(max-width:${bp}px)`;
+  const[narrow,setNarrow]=useState(()=>typeof window!=="undefined"&&typeof window.matchMedia!=="undefined"?window.matchMedia(q).matches:false);
+  useEffect(()=>{
+    if(typeof window==="undefined"||typeof window.matchMedia==="undefined")return;
+    const m=window.matchMedia(q);const on=()=>setNarrow(m.matches);on();
+    try{m.addEventListener("change",on);return()=>m.removeEventListener("change",on);}
+    catch{m.addListener(on);return()=>m.removeListener(on);}
+  },[q]);
+  return narrow;
+}
+
 // Short beep via WebAudio — used to alert when a fresh snipe appears
 function beep(){try{const Ctx=window.AudioContext||window.webkitAudioContext;if(!Ctx)return;const ctx=new Ctx();const o=ctx.createOscillator(),g=ctx.createGain();o.connect(g);g.connect(ctx.destination);o.type="sine";o.frequency.value=880;g.gain.setValueAtTime(.06,ctx.currentTime);g.gain.exponentialRampToValueAtTime(.0001,ctx.currentTime+.25);o.start();o.stop(ctx.currentTime+.25);setTimeout(()=>ctx.close(),300);}catch{}}
 
@@ -344,8 +358,8 @@ function SnipePanel({players,search,listed,setListed,mvOv,setMvOv,profitMin,setP
     {/* live listings */}
     {feedOn&&<div style={{marginBottom:7}}>
       {feedRows.length===0&&<div style={{padding:"10px",textAlign:"center",fontSize:8,color:C.t4,fontFamily:mono}}>{feedStat?.ok?"Feed connected — no listings parsed. Check your array/field paths.":"Waiting for feed..."}</div>}
-      {feedRows.length>0&&<div style={{maxHeight:200,overflowY:"auto",display:"flex",flexDirection:"column",gap:3,padding:"2px"}}>
-        {feedRows.map((r,i)=>(<div key={i} style={{display:"grid",gridTemplateColumns:"1fr 74px 64px 48px",gap:5,alignItems:"center",padding:"4px 7px",borderRadius:5,background:r.isSnipe?C.accDim:C.bg3,border:`1px solid ${r.isSnipe?C.acc+"55":C.border}`}}>
+      {feedRows.length>0&&<div style={{overflowX:"auto"}}><div style={{minWidth:330,maxHeight:200,overflowY:"auto",display:"flex",flexDirection:"column",gap:3,padding:"2px"}}>
+        {feedRows.map((r,i)=>(<div key={i} style={{display:"grid",gridTemplateColumns:"minmax(110px,1fr) 74px 64px 48px",gap:5,alignItems:"center",padding:"4px 7px",borderRadius:5,background:r.isSnipe?C.accDim:C.bg3,border:`1px solid ${r.isSnipe?C.acc+"55":C.border}`}}>
           <div style={{minWidth:0,display:"flex",alignItems:"center",gap:4}}>
             {r.isSnipe&&<span style={{fontSize:8}}>🎯</span>}
             {r.isSnipe&&<HeatBadge h={r.heat}/>}
@@ -356,7 +370,7 @@ function SnipePanel({players,search,listed,setListed,mvOv,setMvOv,profitMin,setP
           <div style={{textAlign:"right",fontSize:10,fontWeight:800,color:r.profit!=null?(r.isSnipe?C.acc:r.profit>0?C.blue:C.err):C.t4,fontFamily:mono}}>{fSigned(r.profit)}</div>
           <div style={{textAlign:"right",fontSize:9,fontWeight:700,color:r.disc!=null?(r.disc>=discountMin?C.acc:C.t3):C.t4,fontFamily:mono}}>{r.disc!=null?r.disc+"%":"—"}</div>
         </div>))}
-      </div>}
+      </div></div>}
     </div>}
 
     {noPrices&&<div style={{padding:"6px 9px",marginBottom:6,borderRadius:5,background:C.warnDim,border:`1px solid ${C.warn}33`,fontSize:8,color:C.warn,fontFamily:mono}}>
@@ -365,8 +379,10 @@ function SnipePanel({players,search,listed,setListed,mvOv,setMvOv,profitMin,setP
 
     <div style={{fontSize:6,color:C.t3,fontFamily:mono,letterSpacing:1,padding:"2px 8px 4px"}}>MANUAL ENTRY</div>
 
+    {/* horizontal-scroll wrapper keeps the fixed grid columns from spilling on phones */}
+    <div style={{overflowX:"auto"}}><div style={{minWidth:340}}>
     {/* column header */}
-    <div style={{display:"grid",gridTemplateColumns:"1fr 78px 78px 64px 52px",gap:5,padding:"0 8px 4px",fontSize:6,color:C.t3,fontFamily:mono,letterSpacing:1}}>
+    <div style={{display:"grid",gridTemplateColumns:"minmax(120px,1fr) 78px 78px 64px 52px",gap:5,padding:"0 8px 4px",fontSize:6,color:C.t3,fontFamily:mono,letterSpacing:1}}>
       <span>PLAYER</span><span>MARKET</span><span>LISTED @</span><span style={{textAlign:"right"}}>PROFIT</span><span style={{textAlign:"right"}}>DISC</span>
     </div>
 
@@ -374,7 +390,7 @@ function SnipePanel({players,search,listed,setListed,mvOv,setMvOv,profitMin,setP
 
     {rows.map(r=>{
       const pc=r.isSnipe?C.acc:r.profit!=null?(r.profit>0?C.blue:C.err):C.t4;
-      return(<div key={r.key} style={{display:"grid",gridTemplateColumns:"1fr 78px 78px 64px 52px",gap:5,alignItems:"center",padding:"6px 8px",marginBottom:4,borderRadius:6,background:r.isSnipe?C.accDim:C.bg2,border:`1px solid ${r.isSnipe?C.acc+"55":C.border}`,boxShadow:r.isSnipe?`0 0 12px ${C.acc}14`:"none",transition:"all .2s"}}>
+      return(<div key={r.key} style={{display:"grid",gridTemplateColumns:"minmax(120px,1fr) 78px 78px 64px 52px",gap:5,alignItems:"center",padding:"6px 8px",marginBottom:4,borderRadius:6,background:r.isSnipe?C.accDim:C.bg2,border:`1px solid ${r.isSnipe?C.acc+"55":C.border}`,boxShadow:r.isSnipe?`0 0 12px ${C.acc}14`:"none",transition:"all .2s"}}>
         <div style={{minWidth:0}}>
           <div style={{display:"flex",alignItems:"center",gap:4}}>
             {r.isSnipe&&<span style={{fontSize:8,color:C.acc}}>🎯</span>}
@@ -389,6 +405,7 @@ function SnipePanel({players,search,listed,setListed,mvOv,setMvOv,profitMin,setP
         <div style={{textAlign:"right",fontSize:10,fontWeight:700,color:r.disc!=null?(r.discOk?C.acc:r.disc>0?C.t2:C.err):C.t4,fontFamily:mono}}>{r.disc!=null?r.disc+"%":"—"}</div>
       </div>);
     })}
+    </div></div>
   </div>);
 }
 
@@ -462,7 +479,8 @@ function CatalogPanel({platform,search,onAdd,addedKeys,isPro,onUpgrade}){
 
     {err&&<div style={{padding:"6px 9px",marginBottom:6,borderRadius:5,background:C.errDim,border:`1px solid ${C.err}33`,fontSize:8,color:C.err,fontFamily:mono}}>catalog error: {err}</div>}
 
-    <div style={{display:"grid",gridTemplateColumns:"26px 1fr 52px 72px 48px 22px",gap:5,padding:"0 8px 4px",fontSize:6,color:C.t3,fontFamily:mono,letterSpacing:1}}>
+    <div style={{overflowX:"auto"}}><div style={{minWidth:360}}>
+    <div style={{display:"grid",gridTemplateColumns:"26px minmax(120px,1fr) 52px 72px 48px 22px",gap:5,padding:"0 8px 4px",fontSize:6,color:C.t3,fontFamily:mono,letterSpacing:1}}>
       <span/><span>PLAYER</span><span>TREND</span><span style={{textAlign:"right"}}>PRICE</span><span style={{textAlign:"right"}}>CHG</span><span/>
     </div>
 
@@ -473,7 +491,7 @@ function CatalogPanel({platform,search,onAdd,addedKeys,isPro,onUpgrade}){
       const cc=c.pctChange==null?C.t4:c.pctChange>0?C.acc:c.pctChange<0?C.err:C.t3;
       const ckey=`${c.name}__${c.program}__${c.pos}__${c.pos}`;
       const added=addedKeys&&addedKeys.has(ckey);
-      return(<div key={c.pk} style={{display:"grid",gridTemplateColumns:"26px 1fr 52px 72px 48px 22px",gap:5,alignItems:"center",padding:"5px 8px",marginBottom:4,borderRadius:6,background:C.bg2,border:`1px solid ${C.border}`}}>
+      return(<div key={c.pk} style={{display:"grid",gridTemplateColumns:"26px minmax(120px,1fr) 52px 72px 48px 22px",gap:5,alignItems:"center",padding:"5px 8px",marginBottom:4,borderRadius:6,background:C.bg2,border:`1px solid ${C.border}`}}>
         <div style={{width:26,height:26,borderRadius:4,overflow:"hidden",background:C.bg3,display:"flex",alignItems:"center",justifyContent:"center"}}>
           {c.image?<img src={c.image} alt="" width={26} height={26} loading="lazy" style={{objectFit:"cover",objectPosition:"top"}}/>:<span style={{fontSize:8,color:C.t4,fontFamily:mono}}>{c.pos}</span>}
         </div>
@@ -491,6 +509,7 @@ function CatalogPanel({platform,search,onAdd,addedKeys,isPro,onUpgrade}){
         <button onClick={()=>!added&&onAdd&&onAdd(c)} disabled={added} title={added?"In Snipe watchlist":"Add to Snipe watchlist"} style={{width:22,height:22,borderRadius:4,border:`1px solid ${added?C.acc+"55":C.border}`,background:added?C.accDim:C.bg3,color:added?C.acc:C.t2,fontSize:11,fontWeight:700,cursor:added?"default":"pointer",lineHeight:1,padding:0}}>{added?"✓":"+"}</button>
       </div>);
     })}
+    </div></div>
 
     {/* Soft paywall — free users can browse page 1 only; page 2+ needs Pro. */}
     {!isPro&&hasMore&&<div style={{margin:"10px 0 2px",padding:"14px 12px",borderRadius:8,textAlign:"center",background:`linear-gradient(135deg,${C.eliteDim},${C.bg2})`,border:`1px solid ${C.elite}44`}}>
@@ -549,8 +568,8 @@ function useAuth(){
 
 // Shared centered-overlay shell for the auth + pricing modals.
 function Modal({onClose,children,width=340}){
-  return(<div onClick={onClose} style={{position:"fixed",inset:0,zIndex:200,background:"#000000bb",backdropFilter:"blur(2px)",display:"flex",alignItems:"center",justifyContent:"center",padding:16,animation:"fadeIn .2s"}}>
-    <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:width,background:C.bg2,border:`1px solid ${C.borderHi}`,borderRadius:10,boxShadow:`0 12px 48px #000a, 0 0 0 1px ${C.border}`,overflow:"hidden"}}>
+  return(<div onClick={onClose} style={{position:"fixed",inset:0,zIndex:200,background:"#000000bb",backdropFilter:"blur(2px)",display:"flex",alignItems:"center",justifyContent:"center",padding:16,overflowY:"auto",animation:"fadeIn .2s"}}>
+    <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:width,maxHeight:"calc(100vh - 32px)",overflowY:"auto",background:C.bg2,border:`1px solid ${C.borderHi}`,borderRadius:10,boxShadow:`0 12px 48px #000a, 0 0 0 1px ${C.border}`}}>
       {children}
     </div>
   </div>);
@@ -651,6 +670,8 @@ export default function App(){
   const[snListed,setSnListed]=useLS("mut.snipe.listed",{}),[snMvOv,setSnMvOv]=useLS("mut.snipe.mvOv",{});
   const[profitMin,setProfitMin]=useLS("mut.snipe.profitMin",5000),[discountMin,setDiscountMin]=useLS("mut.snipe.discountMin",15),[matchMode,setMatchMode]=useLS("mut.snipe.matchMode","any");
   const[plat,setPlat]=useLS("mut.plat","ps5"),[mgRfr,setMgRfr]=useState(false);
+  const[heroDismissed,setHeroDismissed]=useLS("mut.hero.dismissed",false);
+  const narrow=useIsNarrow();
 
   // --- Accounts & subscriptions ---
   const{user,loading:authLoading,login,signup,logout}=useAuth();
@@ -751,14 +772,58 @@ export default function App(){
       </div>
     </div>
 
-    <div style={{display:"flex",gap:3,padding:"8px 15px 0"}}>
-      {[{k:"snipe",l:"🎯 Snipe"},{k:"catalog",l:"📊 Catalog"}].map(t=><button key={t.k} onClick={()=>setTab(t.k)} style={{padding:"5px 14px",borderRadius:"6px 6px 0 0",border:`1px solid ${tab===t.k?C.borderHi:C.border}`,borderBottom:tab===t.k?`1px solid ${C.bg}`:`1px solid ${C.border}`,cursor:"pointer",fontSize:10,fontWeight:700,fontFamily:"'Space Mono',monospace",background:tab===t.k?C.bg3:"transparent",color:tab===t.k?C.t1:C.t3,marginBottom:-1,position:"relative",zIndex:1}}>{t.l}</button>)}
+    {/* Landing / hero — dismissible value-prop. Original copy. */}
+    {!heroDismissed&&<div style={{margin:"11px 15px 0",padding:narrow?"12px 13px":"15px 17px",borderRadius:10,position:"relative",overflow:"hidden",background:`linear-gradient(135deg,${C.bg2},${C.bg4})`,border:`1px solid ${C.borderHi}`,boxShadow:`0 0 0 1px ${C.acc}11, 0 0 30px ${C.acc}0c`}}>
+      <div style={{position:"absolute",inset:0,pointerEvents:"none",background:`radial-gradient(120% 120% at 100% 0%,${C.acc}10,transparent 55%)`}}/>
+      <button onClick={()=>setHeroDismissed(true)} title="Dismiss" style={{position:"absolute",top:8,right:9,zIndex:2,background:"none",border:"none",color:C.t3,fontSize:14,lineHeight:1,cursor:"pointer",padding:3}}>✕</button>
+      <div style={{position:"relative",zIndex:1}}>
+        <div style={{display:"inline-flex",alignItems:"center",gap:5,padding:"2px 8px",borderRadius:20,background:C.accDim,border:`1px solid ${C.acc}33`,marginBottom:9}}>
+          <div style={{width:4,height:4,borderRadius:"50%",background:C.acc,animation:"pulse 2s infinite"}}/>
+          <span style={{fontSize:7,fontWeight:700,letterSpacing:1.2,color:C.acc,fontFamily:"'Space Mono',monospace"}}>LIVE MADDEN 26 MARKET INTEL</span>
+        </div>
+        <div style={{fontSize:narrow?17:21,fontWeight:900,letterSpacing:-.6,lineHeight:1.15,maxWidth:560}}>Catch the underpriced cards <span style={{color:C.acc}}>before the board does</span>.</div>
+        <div style={{fontSize:narrow?10:11,color:C.t2,fontFamily:"'Outfit',sans-serif",lineHeight:1.55,marginTop:7,maxWidth:520}}>MUT Alpha reads the live auction-house market so you don't have to. Set your margin, let the <b style={{color:C.t1}}>Snipe</b> engine flag every flip worth taking, or sweep the priced <b style={{color:C.t1}}>Catalog</b> to see where the whole market is moving.</div>
+        <div style={{display:"flex",gap:14,flexWrap:"wrap",marginTop:11}}>
+          {[["🎯","Snipe","margin-aware deal radar"],["📊","Catalog","live mut.gg priced index"],["📈","Trends","real per-card price history"]].map(([ic,h,s])=>(
+            <div key={h} style={{display:"flex",alignItems:"center",gap:7,minWidth:0}}>
+              <span style={{fontSize:15}}>{ic}</span>
+              <div style={{minWidth:0}}>
+                <div style={{fontSize:9.5,fontWeight:800,color:C.t1,letterSpacing:-.2}}>{h}</div>
+                <div style={{fontSize:7,color:C.t3,fontFamily:"'Space Mono',monospace",whiteSpace:"nowrap"}}>{s}</div>
+              </div>
+            </div>))}
+        </div>
+      </div>
+    </div>}
+
+    <div style={{display:"flex",gap:3,padding:"8px 15px 0",overflowX:"auto"}}>
+      {[{k:"snipe",l:"🎯 Snipe"},{k:"catalog",l:"📊 Catalog"}].map(t=><button key={t.k} onClick={()=>setTab(t.k)} style={{flexShrink:0,padding:"5px 14px",borderRadius:"6px 6px 0 0",border:`1px solid ${tab===t.k?C.borderHi:C.border}`,borderBottom:tab===t.k?`1px solid ${C.bg}`:`1px solid ${C.border}`,cursor:"pointer",fontSize:10,fontWeight:700,fontFamily:"'Space Mono',monospace",background:tab===t.k?C.bg3:"transparent",color:tab===t.k?C.t1:C.t3,marginBottom:-1,position:"relative",zIndex:1}}>{t.l}</button>)}
     </div>
 
     <div style={{padding:"9px 15px 36px",maxHeight:"calc(100vh - 150px)",overflowY:"auto",borderTop:`1px solid ${C.border}`}}>
       {tab==="snipe"&&<SnipePanel players={players} search={search} listed={snListed} setListed={setSnListed} mvOv={snMvOv} setMvOv={setSnMvOv} profitMin={profitMin} setProfitMin={setProfitMin} discountMin={discountMin} setDiscountMin={setDiscountMin} matchMode={matchMode} setMatchMode={setMatchMode}/>}
       {tab==="catalog"&&<CatalogPanel platform={plat} search={search} onAdd={addToSnipe} addedKeys={addedKeys} isPro={isPro} onUpgrade={()=>setPricingOpen(true)}/>}
     </div>
+
+    {/* Footer — independent project, original copy, trademark + ToS disclaimers. */}
+    <footer style={{borderTop:`1px solid ${C.border}`,background:`linear-gradient(180deg,${C.bg},${C.bg2})`,padding:"16px 15px 22px"}}>
+      <div style={{maxWidth:680,margin:"0 auto"}}>
+        <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:7}}>
+          <div style={{width:20,height:20,borderRadius:5,display:"flex",alignItems:"center",justifyContent:"center",background:`linear-gradient(135deg,${C.acc},${C.elite})`,fontSize:10,fontWeight:900}}>◈</div>
+          <div style={{fontSize:11,fontWeight:800,letterSpacing:-.4}}>MUT <span style={{color:C.acc}}>ALPHA</span></div>
+        </div>
+        <div style={{fontSize:9,color:C.t2,fontFamily:"'Outfit',sans-serif",lineHeight:1.55,marginBottom:10,maxWidth:560}}>
+          A scrappy market terminal for Ultimate Team flippers — built to surface the snipes and read the board, fast.
+        </div>
+        <div style={{fontSize:7.5,color:C.t3,fontFamily:"'Space Mono',monospace",lineHeight:1.75,marginBottom:8}}>
+          <div>Independent fan-made project. Not affiliated with, sponsored by, or endorsed by EA Sports / Electronic Arts Inc.</div>
+          <div>"Madden", "Madden NFL", and "Madden Ultimate Team" are trademarks of their respective owners. All player and team names belong to their holders.</div>
+          <div>Pricing reflects third-party community data (mut.gg) and may lag the in-game market. No coins, accounts, or in-game value are bought, sold, or transferred here.</div>
+          <div>The optional <button onClick={()=>{setHeroDismissed(true);setTab("snipe");}} style={{background:"none",border:"none",padding:0,color:C.warn,fontFamily:"'Space Mono',monospace",fontSize:7.5,fontWeight:700,cursor:"pointer",textDecoration:"underline"}}>live feed</button> reads your own captured EA session and may violate EA's terms — see the in-app risk notice before enabling it. Use it on an account you accept the risk of losing.</div>
+        </div>
+        <div style={{fontSize:7,color:C.t4,fontFamily:"'Space Mono',monospace",letterSpacing:.5,borderTop:`1px solid ${C.border}`,paddingTop:8}}>© {new Date().getFullYear()} MUT Alpha · An indie tool, built by one flipper for flippers.</div>
+      </div>
+    </footer>
 
     {authOpen&&<AuthModal onClose={()=>setAuthOpen(false)} login={login} signup={signup}/>}
     {pricingOpen&&<PricingModal onClose={()=>setPricingOpen(false)} user={user} isPro={isPro} onUpgrade={startCheckout} onNeedAuth={()=>{setPricingOpen(false);setAuthOpen(true);}}/>}
