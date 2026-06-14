@@ -437,32 +437,36 @@ function Spark({data,w=52,h=16}){
 const CAT_POS=["","QB","HB","FB","WR","TE","LT","LG","C","RG","RT","LEDG","REDG","DT","MIKE","WILL","SAM","CB","FS","SS","K","P"];
 const CAT_SORTS=[["ovr_desc","OVR ↓"],["ovr_asc","OVR ↑"],["price_desc","PRICE ↓"],["price_asc","PRICE ↑"],["change_desc","CHANGE ↓"],["change_asc","CHANGE ↑"]];
 
-// Market Catalog — live, server-paginated read of mut.gg's public price index.
-// Free users see page 1 only; page 2+ is gated behind an active Pro sub (isPro).
+// Market Catalog — live read of mut.gg's public price index.
+// mut.gg only exposes a fixed top set + name search (no real pagination), so this
+// shows the top cards and lets Pro members search the full name index (isPro).
 function CatalogPanel({platform,search,onAdd,addedKeys,isPro,onUpgrade}){
   const mono="'Space Mono',monospace";
   const sel={height:26,padding:"0 6px",borderRadius:5,border:`1px solid ${C.border}`,background:C.bg2,color:C.t2,fontSize:9,fontFamily:mono,fontWeight:700,cursor:"pointer",outline:"none"};
-  const[rows,setRows]=useState([]),[page,setPage]=useState(1),[loading,setLoading]=useState(false);
+  const[rows,setRows]=useState([]),[loading,setLoading]=useState(false);
   const[sort,setSort]=useLS("mut.cat.sort","ovr_desc"),[position,setPosition]=useLS("mut.cat.pos","");
   const[auctionOnly,setAuctionOnly]=useLS("mut.cat.auction",false);
-  const[hasMore,setHasMore]=useState(false),[err,setErr]=useState(null);
+  const[err,setErr]=useState(null);
 
-  useEffect(()=>{setPage(1);},[platform,search,sort,position,auctionOnly]);
+  // Search is a Pro feature; free users browse the top set unfiltered by name.
+  const searching=!!search.trim();
+  const effQ=isPro?search.trim():"";
+  const locked=searching&&!isPro;
 
   useEffect(()=>{
     let alive=true;setLoading(true);setErr(null);
-    const params=new URLSearchParams({page:String(page),platform,sort});
-    if(search.trim())params.set("q",search.trim());
+    const params=new URLSearchParams({platform,sort});
+    if(effQ)params.set("q",effQ);
     if(position)params.set("position",position);
     if(auctionOnly)params.set("auctionOnly","1");
     fetch(`/api/catalog?${params.toString()}`).then(r=>r.json()).then(j=>{
       if(!alive)return;
       const data=j.data||[];
       data.forEach(c=>pushHistory(c.pk,platform,c.price));
-      setRows(data);setHasMore(!!j.hasMore);setErr(j.error||null);
+      setRows(data);setErr(j.error||null);
     }).catch(e=>{if(alive)setErr(e.message);}).finally(()=>{if(alive)setLoading(false);});
     return()=>{alive=false;};
-  },[page,platform,search,sort,position,auctionOnly]);
+  },[platform,effQ,sort,position,auctionOnly]);
 
   return(<div style={{animation:"fadeIn .4s ease"}}>
     <div style={{display:"flex",gap:5,flexWrap:"wrap",alignItems:"center",padding:"7px 9px",borderRadius:7,background:`linear-gradient(135deg,${C.bg2},${C.bg4})`,border:`1px solid ${C.border}`,marginBottom:7}}>
@@ -484,7 +488,7 @@ function CatalogPanel({platform,search,onAdd,addedKeys,isPro,onUpgrade}){
       <span/><span>PLAYER</span><span>TREND</span><span style={{textAlign:"right"}}>PRICE</span><span style={{textAlign:"right"}}>CHG</span><span/>
     </div>
 
-    {!loading&&rows.length===0&&<div style={{padding:20,textAlign:"center",color:C.t4,fontFamily:mono,fontSize:10}}>{search?`No results for "${search}"`:"No cards"}</div>}
+    {!loading&&rows.length===0&&!locked&&<div style={{padding:20,textAlign:"center",color:C.t4,fontFamily:mono,fontSize:10}}>{effQ?`No results for "${effQ}"`:"No cards"}</div>}
 
     {rows.map(c=>{
       const chg=fmtPct(c.pctChange);
@@ -511,20 +515,14 @@ function CatalogPanel({platform,search,onAdd,addedKeys,isPro,onUpgrade}){
     })}
     </div></div>
 
-    {/* Soft paywall — free users can browse page 1 only; page 2+ needs Pro. */}
-    {!isPro&&hasMore&&<div style={{margin:"10px 0 2px",padding:"14px 12px",borderRadius:8,textAlign:"center",background:`linear-gradient(135deg,${C.eliteDim},${C.bg2})`,border:`1px solid ${C.elite}44`}}>
-      <div style={{fontSize:11,fontWeight:800,color:C.elite,fontFamily:mono,letterSpacing:.5}}>🔒 PRO UNLOCKS THE FULL CATALOG</div>
-      <div style={{fontSize:9,color:C.t2,fontFamily:"'Outfit',sans-serif",margin:"5px auto 9px",maxWidth:300,lineHeight:1.5}}>You're on page 1. Pro members page through every priced card across all platforms — no limits.</div>
+    {/* Soft paywall — name search is a Pro feature; free users browse the top set. */}
+    {locked&&<div style={{margin:"10px 0 2px",padding:"14px 12px",borderRadius:8,textAlign:"center",background:`linear-gradient(135deg,${C.eliteDim},${C.bg2})`,border:`1px solid ${C.elite}44`}}>
+      <div style={{fontSize:11,fontWeight:800,color:C.elite,fontFamily:mono,letterSpacing:.5}}>🔒 PRO UNLOCKS CARD SEARCH</div>
+      <div style={{fontSize:9,color:C.t2,fontFamily:"'Outfit',sans-serif",margin:"5px auto 9px",maxWidth:320,lineHeight:1.5}}>Free members browse the live top cards. Pro members search the full mut.gg name index for any card on any platform.</div>
       <button onClick={onUpgrade} style={{padding:"7px 18px",borderRadius:6,border:`1px solid ${C.elite}`,background:C.elite,color:C.bg,fontSize:10,fontWeight:800,fontFamily:mono,letterSpacing:1,cursor:"pointer"}}>UPGRADE TO PRO →</button>
     </div>}
 
-    {/* Pagination — NEXT is gated for free users beyond page 1. */}
-    <div style={{display:"flex",gap:6,alignItems:"center",justifyContent:"center",padding:"8px 0 2px"}}>
-      <button onClick={()=>setPage(p=>Math.max(1,p-1))} disabled={page<=1||loading} style={{padding:"5px 12px",borderRadius:5,border:`1px solid ${C.border}`,background:page<=1?C.bg2:C.bg3,color:page<=1?C.t4:C.t2,fontSize:9,fontFamily:mono,fontWeight:700,cursor:page<=1?"default":"pointer"}}>← PREV</button>
-      <span style={{fontSize:8,color:C.t3,fontFamily:mono}}>PAGE {page}</span>
-      {(()=>{const locked=!isPro&&page>=1; const disabled=!hasMore||loading||locked;
-        return <button onClick={()=>{if(locked){onUpgrade&&onUpgrade();return;}setPage(p=>p+1);}} disabled={!hasMore||loading} title={locked?"Pro unlocks page 2+":""} style={{padding:"5px 12px",borderRadius:5,border:`1px solid ${locked?C.elite+"66":C.border}`,background:disabled&&!locked?C.bg2:locked?C.eliteDim:C.bg3,color:locked?C.elite:!hasMore?C.t4:C.t2,fontSize:9,fontFamily:mono,fontWeight:700,cursor:(!hasMore||loading)?"default":"pointer"}}>{locked?"🔒 NEXT →":"NEXT →"}</button>;})()}
-    </div>
+    <div style={{textAlign:"center",fontSize:6.5,color:C.t4,fontFamily:mono,padding:"8px 0 2px"}}>Live top cards from mut.gg{isPro?" · search the full index above":""}. Prices are mut.gg community values.</div>
   </div>);
 }
 
@@ -618,7 +616,7 @@ function PricingModal({onClose,user,isPro,onUpgrade,onNeedAuth}){
   const mono="'Space Mono',monospace";
   const[busy,setBusy]=useState(false),[err,setErr]=useState(null);
   const perks=[
-    "Page through the entire mut.gg catalog — no page-1 cap",
+    "Search the full mut.gg name index — find any card, not just the top set",
     "Every platform's pricing in one sweep (PS5/PS4/XBSX/XB1/PC)",
     "Priority on new spotter features as they ship",
     "Support an indie tool built by one flipper, for flippers",

@@ -62,7 +62,6 @@ async function fetchPage(page, q) {
 
 export default async function handler(req, res) {
   const src = req.method === "POST" ? (req.body || {}) : (req.query || {});
-  const page = Math.max(1, parseInt(src.page) || 1);
   const plat = PLAT[src.platform] || PLAT.ps5;
   const q = (src.q || src.name || "").toString().trim();
   const position = (src.position || "").toString().trim().toUpperCase();
@@ -70,24 +69,27 @@ export default async function handler(req, res) {
   const auctionOnly = src.auctionOnly === true || src.auctionOnly === "true" || src.auctionOnly === "1";
 
   try {
-    // When a position filter is active we sweep a few upstream pages so the
-    // filter isn't limited to a single 25-card slice; otherwise one page.
-    const sweep = position ? 6 : 1;
-    let raw = [];
-    for (let i = 0; i < sweep; i++) {
-      const items = await fetchPage(page + i, q);
-      raw = raw.concat(items);
-      if (items.length < PAGE_SIZE) break; // no more pages upstream
-    }
+    // NOTE: mut.gg's public player-items endpoint ignores page/offset/limit/
+    // ordering and always returns a single ~25-card set. The only real lever is
+    // `name` (substring search). So there is no server pagination here — we fetch
+    // once, then filter/sort the returned set. `q` narrows by player name.
+    const raw = await fetchPage(1, q);
 
-    let data = raw.map(it => normalize(it, plat));
+    // Dedupe by pk (the upstream set can repeat entries across name matches).
+    const seen = new Set();
+    let data = [];
+    for (const it of raw) {
+      const c = normalize(it, plat);
+      if (c.pk != null && seen.has(c.pk)) continue;
+      if (c.pk != null) seen.add(c.pk);
+      data.push(c);
+    }
     if (position) data = data.filter(p => p.pos === position);
     if (auctionOnly) data = data.filter(p => p.canAuction);
     data.sort(SORTS[sort]);
 
-    const hasMore = raw.length >= PAGE_SIZE * (position ? 6 : 1);
-    return res.status(200).json({ data, page, platform: src.platform || "ps5", sort, hasMore });
+    return res.status(200).json({ data, platform: src.platform || "ps5", sort, query: q, hasMore: false });
   } catch (err) {
-    return res.status(200).json({ data: [], page, platform: src.platform || "ps5", error: err.message });
+    return res.status(200).json({ data: [], platform: src.platform || "ps5", error: err.message });
   }
 }
