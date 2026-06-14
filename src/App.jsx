@@ -437,36 +437,39 @@ function Spark({data,w=52,h=16}){
 const CAT_POS=["","QB","HB","FB","WR","TE","LT","LG","C","RG","RT","LEDG","REDG","DT","MIKE","WILL","SAM","CB","FS","SS","K","P"];
 const CAT_SORTS=[["ovr_desc","OVR ↓"],["ovr_asc","OVR ↑"],["price_desc","PRICE ↓"],["price_asc","PRICE ↑"],["change_desc","CHANGE ↓"],["change_asc","CHANGE ↑"]];
 
-// Market Catalog — live read of mut.gg's public price index.
-// mut.gg only exposes a fixed top set + name search (no real pagination), so this
-// shows the top cards and lets Pro members search the full name index (isPro).
+// Market Catalog. Two modes: BROWSE paginates the full card DB (metadata from
+// mut.gg's /players/ pages); SEARCH (Pro) hits the priced name index.
 function CatalogPanel({platform,search,onAdd,addedKeys,isPro,onUpgrade}){
   const mono="'Space Mono',monospace";
   const sel={height:26,padding:"0 6px",borderRadius:5,border:`1px solid ${C.border}`,background:C.bg2,color:C.t2,fontSize:9,fontFamily:mono,fontWeight:700,cursor:"pointer",outline:"none"};
   const[rows,setRows]=useState([]),[loading,setLoading]=useState(false);
   const[sort,setSort]=useLS("mut.cat.sort","ovr_desc"),[position,setPosition]=useLS("mut.cat.pos","");
-  const[auctionOnly,setAuctionOnly]=useLS("mut.cat.auction",false);
-  const[err,setErr]=useState(null);
+  const[ovrMin,setOvrMin]=useLS("mut.cat.ovrmin",0),[auctionOnly,setAuctionOnly]=useLS("mut.cat.auction",false);
+  const[page,setPage]=useState(1),[hasMore,setHasMore]=useState(false),[mode,setMode]=useState("browse"),[err,setErr]=useState(null);
 
-  // Search is a Pro feature; free users browse the top set unfiltered by name.
+  // Search is a Pro feature; free users browse the paginated metadata catalog.
   const searching=!!search.trim();
   const effQ=isPro?search.trim():"";
   const locked=searching&&!isPro;
 
+  // Reset to page 1 whenever the query shape changes.
+  useEffect(()=>{setPage(1);},[platform,effQ,sort,position,ovrMin,auctionOnly]);
+
   useEffect(()=>{
     let alive=true;setLoading(true);setErr(null);
-    const params=new URLSearchParams({platform,sort});
+    const params=new URLSearchParams({platform,sort,page:String(page)});
     if(effQ)params.set("q",effQ);
     if(position)params.set("position",position);
+    if(ovrMin)params.set("overallMin",String(ovrMin));
     if(auctionOnly)params.set("auctionOnly","1");
     fetch(`/api/catalog?${params.toString()}`).then(r=>r.json()).then(j=>{
       if(!alive)return;
       const data=j.data||[];
       data.forEach(c=>pushHistory(c.pk,platform,c.price));
-      setRows(data);setErr(j.error||null);
+      setRows(data);setHasMore(!!j.hasMore);setMode(j.mode||"browse");setErr(j.error||null);
     }).catch(e=>{if(alive)setErr(e.message);}).finally(()=>{if(alive)setLoading(false);});
     return()=>{alive=false;};
-  },[platform,effQ,sort,position,auctionOnly]);
+  },[platform,effQ,sort,position,ovrMin,auctionOnly,page]);
 
   return(<div style={{animation:"fadeIn .4s ease"}}>
     <div style={{display:"flex",gap:5,flexWrap:"wrap",alignItems:"center",padding:"7px 9px",borderRadius:7,background:`linear-gradient(135deg,${C.bg2},${C.bg4})`,border:`1px solid ${C.border}`,marginBottom:7}}>
@@ -476,9 +479,12 @@ function CatalogPanel({platform,search,onAdd,addedKeys,isPro,onUpgrade}){
       <select value={sort} onChange={e=>setSort(e.target.value)} title="Sort" style={sel}>
         {CAT_SORTS.map(([v,l])=><option key={v} value={v}>{l}</option>)}
       </select>
+      <select value={ovrMin} onChange={e=>setOvrMin(parseInt(e.target.value)||0)} title="Minimum overall" style={sel}>
+        {[0,80,85,88,90,92,94,95,96,97,98,99].map(v=><option key={v} value={v}>{v?`OVR ≥ ${v}`:"ANY OVR"}</option>)}
+      </select>
       <button onClick={()=>setAuctionOnly(v=>!v)} title="Only auctionable cards" style={{...sel,color:auctionOnly?C.acc:C.t3,borderColor:auctionOnly?C.acc+"66":C.border,background:auctionOnly?C.accDim:C.bg2}}>{auctionOnly?"✓ AUCTIONABLE":"AUCTIONABLE"}</button>
       <div style={{flex:1}}/>
-      <span style={{fontSize:7,color:C.t3,fontFamily:mono}}>{loading?"loading…":`${rows.length} cards · ${platform.toUpperCase()}`}</span>
+      <span style={{fontSize:7,color:C.t3,fontFamily:mono}}>{loading?"loading…":`${rows.length} ${mode==="browse"?`· pg ${page}`:"matches"} · ${platform.toUpperCase()}`}</span>
     </div>
 
     {err&&<div style={{padding:"6px 9px",marginBottom:6,borderRadius:5,background:C.errDim,border:`1px solid ${C.err}33`,fontSize:8,color:C.err,fontFamily:mono}}>catalog error: {err}</div>}
@@ -522,7 +528,14 @@ function CatalogPanel({platform,search,onAdd,addedKeys,isPro,onUpgrade}){
       <button onClick={onUpgrade} style={{padding:"7px 18px",borderRadius:6,border:`1px solid ${C.elite}`,background:C.elite,color:C.bg,fontSize:10,fontWeight:800,fontFamily:mono,letterSpacing:1,cursor:"pointer"}}>UPGRADE TO PRO →</button>
     </div>}
 
-    <div style={{textAlign:"center",fontSize:6.5,color:C.t4,fontFamily:mono,padding:"8px 0 2px"}}>Live top cards from mut.gg{isPro?" · search the full index above":""}. Prices are mut.gg community values.</div>
+    {/* Pager — real in browse mode (mut.gg /players pages); search mode is single-page. */}
+    {mode==="browse"&&!locked&&<div style={{display:"flex",gap:6,alignItems:"center",justifyContent:"center",padding:"8px 0 2px"}}>
+      <button onClick={()=>setPage(p=>Math.max(1,p-1))} disabled={page<=1||loading} style={{padding:"5px 12px",borderRadius:5,border:`1px solid ${C.border}`,background:page<=1?C.bg2:C.bg3,color:page<=1?C.t4:C.t2,fontSize:9,fontFamily:mono,fontWeight:700,cursor:page<=1?"default":"pointer"}}>← PREV</button>
+      <span style={{fontSize:8,color:C.t3,fontFamily:mono}}>PAGE {page}</span>
+      <button onClick={()=>setPage(p=>p+1)} disabled={!hasMore||loading} style={{padding:"5px 12px",borderRadius:5,border:`1px solid ${C.border}`,background:!hasMore?C.bg2:C.bg3,color:!hasMore?C.t4:C.t2,fontSize:9,fontFamily:mono,fontWeight:700,cursor:!hasMore?"default":"pointer"}}>NEXT →</button>
+    </div>}
+
+    <div style={{textAlign:"center",fontSize:6.5,color:C.t4,fontFamily:mono,padding:"8px 0 2px"}}>{mode==="browse"?"Browsing the full mut.gg catalog (metadata). Search a name for live prices.":"Priced name matches from mut.gg."} Prices are mut.gg community values.</div>
   </div>);
 }
 
