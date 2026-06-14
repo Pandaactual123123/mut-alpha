@@ -421,7 +421,8 @@ const CAT_POS=["","QB","HB","FB","WR","TE","LT","LG","C","RG","RT","LEDG","REDG"
 const CAT_SORTS=[["ovr_desc","OVR ↓"],["ovr_asc","OVR ↑"],["price_desc","PRICE ↓"],["price_asc","PRICE ↑"],["change_desc","CHANGE ↓"],["change_asc","CHANGE ↑"]];
 
 // Market Catalog — live, server-paginated read of mut.gg's public price index.
-function CatalogPanel({platform,search,onAdd,addedKeys}){
+// Free users see page 1 only; page 2+ is gated behind an active Pro sub (isPro).
+function CatalogPanel({platform,search,onAdd,addedKeys,isPro,onUpgrade}){
   const mono="'Space Mono',monospace";
   const sel={height:26,padding:"0 6px",borderRadius:5,border:`1px solid ${C.border}`,background:C.bg2,color:C.t2,fontSize:9,fontFamily:mono,fontWeight:700,cursor:"pointer",outline:"none"};
   const[rows,setRows]=useState([]),[page,setPage]=useState(1),[loading,setLoading]=useState(false);
@@ -491,12 +492,154 @@ function CatalogPanel({platform,search,onAdd,addedKeys}){
       </div>);
     })}
 
+    {/* Soft paywall — free users can browse page 1 only; page 2+ needs Pro. */}
+    {!isPro&&hasMore&&<div style={{margin:"10px 0 2px",padding:"14px 12px",borderRadius:8,textAlign:"center",background:`linear-gradient(135deg,${C.eliteDim},${C.bg2})`,border:`1px solid ${C.elite}44`}}>
+      <div style={{fontSize:11,fontWeight:800,color:C.elite,fontFamily:mono,letterSpacing:.5}}>🔒 PRO UNLOCKS THE FULL CATALOG</div>
+      <div style={{fontSize:9,color:C.t2,fontFamily:"'Outfit',sans-serif",margin:"5px auto 9px",maxWidth:300,lineHeight:1.5}}>You're on page 1. Pro members page through every priced card across all platforms — no limits.</div>
+      <button onClick={onUpgrade} style={{padding:"7px 18px",borderRadius:6,border:`1px solid ${C.elite}`,background:C.elite,color:C.bg,fontSize:10,fontWeight:800,fontFamily:mono,letterSpacing:1,cursor:"pointer"}}>UPGRADE TO PRO →</button>
+    </div>}
+
+    {/* Pagination — NEXT is gated for free users beyond page 1. */}
     <div style={{display:"flex",gap:6,alignItems:"center",justifyContent:"center",padding:"8px 0 2px"}}>
       <button onClick={()=>setPage(p=>Math.max(1,p-1))} disabled={page<=1||loading} style={{padding:"5px 12px",borderRadius:5,border:`1px solid ${C.border}`,background:page<=1?C.bg2:C.bg3,color:page<=1?C.t4:C.t2,fontSize:9,fontFamily:mono,fontWeight:700,cursor:page<=1?"default":"pointer"}}>← PREV</button>
       <span style={{fontSize:8,color:C.t3,fontFamily:mono}}>PAGE {page}</span>
-      <button onClick={()=>setPage(p=>p+1)} disabled={!hasMore||loading} style={{padding:"5px 12px",borderRadius:5,border:`1px solid ${C.border}`,background:!hasMore?C.bg2:C.bg3,color:!hasMore?C.t4:C.t2,fontSize:9,fontFamily:mono,fontWeight:700,cursor:!hasMore?"default":"pointer"}}>NEXT →</button>
+      {(()=>{const locked=!isPro&&page>=1; const disabled=!hasMore||loading||locked;
+        return <button onClick={()=>{if(locked){onUpgrade&&onUpgrade();return;}setPage(p=>p+1);}} disabled={!hasMore||loading} title={locked?"Pro unlocks page 2+":""} style={{padding:"5px 12px",borderRadius:5,border:`1px solid ${locked?C.elite+"66":C.border}`,background:disabled&&!locked?C.bg2:locked?C.eliteDim:C.bg3,color:locked?C.elite:!hasMore?C.t4:C.t2,fontSize:9,fontFamily:mono,fontWeight:700,cursor:(!hasMore||loading)?"default":"pointer"}}>{locked?"🔒 NEXT →":"NEXT →"}</button>;})()}
     </div>
   </div>);
+}
+
+// ---- Accounts & subscriptions (Phase 4) ------------------------------------
+// useAuth: loads the current user from /api/auth/me on mount and exposes the
+// auth actions. All network state is server-backed (HttpOnly session cookie),
+// so there's nothing sensitive in localStorage here.
+function useAuth(){
+  const[user,setUser]=useState(null);
+  const[loading,setLoading]=useState(true);
+
+  const refresh=useCallback(async()=>{
+    try{
+      const r=await fetch("/api/auth/me");
+      if(r.ok){const j=await r.json();setUser(j.user||null);}
+      else setUser(null);
+    }catch{setUser(null);}
+    finally{setLoading(false);}
+  },[]);
+
+  useEffect(()=>{refresh();},[refresh]);
+
+  // login/signup share a shape: resolve {ok} or {ok:false,error}. On success the
+  // server sets the cookie and returns the safe user, which we store directly.
+  const auth=useCallback(async(path,email,password)=>{
+    try{
+      const r=await fetch(path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email,password})});
+      const j=await r.json().catch(()=>({}));
+      if(!r.ok)return{ok:false,error:j.error||`HTTP ${r.status}`};
+      setUser(j.user||null);
+      return{ok:true};
+    }catch(e){return{ok:false,error:e.message};}
+  },[]);
+
+  const login=useCallback((email,password)=>auth("/api/auth/login",email,password),[auth]);
+  const signup=useCallback((email,password)=>auth("/api/auth/signup",email,password),[auth]);
+  const logout=useCallback(async()=>{try{await fetch("/api/auth/logout",{method:"POST"});}catch{}setUser(null);},[]);
+
+  return{user,loading,login,signup,logout,refresh};
+}
+
+// Shared centered-overlay shell for the auth + pricing modals.
+function Modal({onClose,children,width=340}){
+  return(<div onClick={onClose} style={{position:"fixed",inset:0,zIndex:200,background:"#000000bb",backdropFilter:"blur(2px)",display:"flex",alignItems:"center",justifyContent:"center",padding:16,animation:"fadeIn .2s"}}>
+    <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:width,background:C.bg2,border:`1px solid ${C.borderHi}`,borderRadius:10,boxShadow:`0 12px 48px #000a, 0 0 0 1px ${C.border}`,overflow:"hidden"}}>
+      {children}
+    </div>
+  </div>);
+}
+
+// Auth modal — toggles between Login and Sign up against the same fields.
+function AuthModal({onClose,login,signup}){
+  const mono="'Space Mono',monospace";
+  const[mode,setMode]=useState("login");
+  const[email,setEmail]=useState(""),[pw,setPw]=useState("");
+  const[busy,setBusy]=useState(false),[err,setErr]=useState(null);
+  const inp={width:"100%",padding:"8px 9px",background:C.bg,border:`1px solid ${C.border}`,borderRadius:5,color:C.t1,fontSize:11,fontFamily:mono,outline:"none",marginBottom:8};
+
+  const submit=async(e)=>{
+    e.preventDefault();
+    if(busy)return;
+    setErr(null);
+    if(mode==="signup"&&pw.length<8){setErr("Password must be at least 8 characters.");return;}
+    setBusy(true);
+    const r=await (mode==="login"?login(email,pw):signup(email,pw));
+    setBusy(false);
+    if(r.ok)onClose();
+    else setErr(r.error||"Something went wrong.");
+  };
+
+  return(<Modal onClose={onClose}>
+    <div style={{padding:"16px 16px 6px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+      <div style={{fontSize:14,fontWeight:800,letterSpacing:-.3}}>{mode==="login"?"Sign in":"Create account"}</div>
+      <button onClick={onClose} style={{background:"none",border:"none",color:C.t3,fontSize:16,cursor:"pointer",lineHeight:1,padding:2}}>✕</button>
+    </div>
+    <form onSubmit={submit} style={{padding:"4px 16px 16px"}}>
+      <input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="you@email.com" autoComplete="email" style={inp}/>
+      <input type="password" value={pw} onChange={e=>setPw(e.target.value)} placeholder={mode==="signup"?"Password (8+ chars)":"Password"} autoComplete={mode==="login"?"current-password":"new-password"} style={inp}/>
+      {err&&<div style={{fontSize:9,color:C.err,fontFamily:mono,marginBottom:8,padding:"5px 7px",background:C.errDim,borderRadius:4,border:`1px solid ${C.err}33`}}>{err}</div>}
+      <button type="submit" disabled={busy||!email||!pw} style={{width:"100%",padding:"9px",borderRadius:6,border:"none",background:C.acc,color:C.bg,fontSize:11,fontWeight:800,fontFamily:mono,letterSpacing:1,cursor:busy?"default":"pointer",opacity:(busy||!email||!pw)?.6:1}}>{busy?"…":(mode==="login"?"SIGN IN":"SIGN UP")}</button>
+    </form>
+    <div style={{padding:"10px 16px",borderTop:`1px solid ${C.border}`,fontSize:9,color:C.t3,fontFamily:mono,textAlign:"center"}}>
+      {mode==="login"?"No account yet? ":"Already have one? "}
+      <button onClick={()=>{setMode(m=>m==="login"?"signup":"login");setErr(null);}} style={{background:"none",border:"none",color:C.acc,fontSize:9,fontFamily:mono,fontWeight:700,cursor:"pointer",padding:0}}>{mode==="login"?"Create one":"Sign in"}</button>
+    </div>
+  </Modal>);
+}
+
+// Pricing modal — one paid tier ("Pro"). Marketing copy is original to this app.
+function PricingModal({onClose,user,isPro,onUpgrade,onNeedAuth}){
+  const mono="'Space Mono',monospace";
+  const[busy,setBusy]=useState(false),[err,setErr]=useState(null);
+  const perks=[
+    "Page through the entire mut.gg catalog — no page-1 cap",
+    "Every platform's pricing in one sweep (PS5/PS4/XBSX/XB1/PC)",
+    "Priority on new spotter features as they ship",
+    "Support an indie tool built by one flipper, for flippers",
+  ];
+
+  const upgrade=async()=>{
+    if(busy)return;
+    if(!user){onNeedAuth&&onNeedAuth();return;}
+    setBusy(true);setErr(null);
+    const r=await onUpgrade();
+    setBusy(false);
+    if(r&&r.error)setErr(r.error);
+  };
+
+  return(<Modal onClose={onClose} width={380}>
+    <div style={{padding:"16px 16px 6px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+      <div style={{fontSize:14,fontWeight:800,letterSpacing:-.3}}>MUT Alpha <span style={{color:C.elite}}>Pro</span></div>
+      <button onClick={onClose} style={{background:"none",border:"none",color:C.t3,fontSize:16,cursor:"pointer",lineHeight:1,padding:2}}>✕</button>
+    </div>
+    <div style={{padding:"4px 16px 16px"}}>
+      <div style={{fontSize:10,color:C.t2,fontFamily:"'Outfit',sans-serif",lineHeight:1.5,marginBottom:12}}>
+        The free tier flags snipes and shows you the top of the market. Pro takes the lid off — browse the whole board and keep every edge as the tool grows.
+      </div>
+      <div style={{borderRadius:8,border:`1px solid ${C.elite}44`,background:`linear-gradient(135deg,${C.eliteDim},${C.bg})`,padding:"14px 14px 16px",marginBottom:12}}>
+        <div style={{display:"flex",alignItems:"baseline",gap:6,marginBottom:10}}>
+          <span style={{fontSize:24,fontWeight:900,color:C.t1,fontFamily:mono}}>Pro</span>
+          <span style={{fontSize:9,color:C.t3,fontFamily:mono}}>billed via Stripe</span>
+        </div>
+        {perks.map((p,i)=>(<div key={i} style={{display:"flex",gap:7,alignItems:"flex-start",marginBottom:7}}>
+          <span style={{color:C.elite,fontSize:11,lineHeight:1.3,flexShrink:0}}>◆</span>
+          <span style={{fontSize:10,color:C.t1,fontFamily:"'Outfit',sans-serif",lineHeight:1.4}}>{p}</span>
+        </div>))}
+      </div>
+      {err&&<div style={{fontSize:9,color:C.err,fontFamily:mono,marginBottom:8,padding:"5px 7px",background:C.errDim,borderRadius:4,border:`1px solid ${C.err}33`}}>{err}</div>}
+      {isPro
+        ?<div style={{padding:"9px",borderRadius:6,textAlign:"center",background:C.accDim,border:`1px solid ${C.acc}55`,fontSize:10,fontWeight:800,color:C.acc,fontFamily:mono,letterSpacing:1}}>✓ YOU'RE ON PRO — full catalog unlocked</div>
+        :<button onClick={upgrade} disabled={busy} style={{width:"100%",padding:"10px",borderRadius:6,border:"none",background:C.elite,color:C.bg,fontSize:11,fontWeight:800,fontFamily:mono,letterSpacing:1,cursor:busy?"default":"pointer",opacity:busy?.6:1}}>{busy?"REDIRECTING…":(user?"UPGRADE TO PRO →":"SIGN IN TO UPGRADE")}</button>}
+      <div style={{fontSize:7.5,color:C.t4,fontFamily:mono,textAlign:"center",marginTop:9,lineHeight:1.5}}>Checkout is handled by Stripe. Billing is disabled until the operator configures Stripe keys.</div>
+    </div>
+  </Modal>);
 }
 
 export default function App(){
@@ -508,6 +651,21 @@ export default function App(){
   const[snListed,setSnListed]=useLS("mut.snipe.listed",{}),[snMvOv,setSnMvOv]=useLS("mut.snipe.mvOv",{});
   const[profitMin,setProfitMin]=useLS("mut.snipe.profitMin",5000),[discountMin,setDiscountMin]=useLS("mut.snipe.discountMin",15),[matchMode,setMatchMode]=useLS("mut.snipe.matchMode","any");
   const[plat,setPlat]=useLS("mut.plat","ps5"),[mgRfr,setMgRfr]=useState(false);
+
+  // --- Accounts & subscriptions ---
+  const{user,loading:authLoading,login,signup,logout}=useAuth();
+  const isPro=user?.subStatus==="active";
+  const[authOpen,setAuthOpen]=useState(false),[pricingOpen,setPricingOpen]=useState(false),[acctMenu,setAcctMenu]=useState(false);
+
+  // Kick off Stripe Checkout and redirect to the returned session URL.
+  const startCheckout=useCallback(async()=>{
+    try{
+      const r=await fetch("/api/billing/checkout",{method:"POST",headers:{"Content-Type":"application/json"}});
+      const j=await r.json().catch(()=>({}));
+      if(r.ok&&j.url){window.location.href=j.url;return{ok:true};}
+      return{error:j.error||`Checkout failed (HTTP ${r.status}).`};
+    }catch(e){return{error:e.message};}
+  },[]);
 
   useEffect(()=>{const l=document.createElement("link");l.href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Outfit:wght@300;400;500;600;700;800;900&display=swap";l.rel="stylesheet";document.head.appendChild(l);setTimeout(()=>setLoaded(true),150);},[]);
 
@@ -557,6 +715,30 @@ export default function App(){
             <span style={{fontSize:11}}>🪙</span>
             <span style={{fontSize:8,fontWeight:600,color:mgRfr?C.coin:C.t3,fontFamily:"'Space Mono',monospace"}}>{mgRfr?"...":"PRICES"}</span>
           </button>
+
+          {/* Account button — email + menu when signed in, "Sign in" otherwise. */}
+          <div style={{position:"relative"}}>
+            {authLoading
+              ?<div style={{height:28,padding:"0 9px",display:"flex",alignItems:"center",fontSize:8,color:C.t4,fontFamily:"'Space Mono',monospace"}}>…</div>
+              :user
+                ?<button onClick={()=>setAcctMenu(o=>!o)} title={user.email} style={{height:28,padding:"0 9px",borderRadius:5,border:`1px solid ${isPro?C.elite+"66":C.border}`,background:isPro?C.eliteDim:C.bg2,cursor:"pointer",display:"flex",alignItems:"center",gap:5,maxWidth:160}}>
+                    <span style={{width:16,height:16,borderRadius:"50%",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",background:isPro?C.elite:C.acc,color:C.bg,fontSize:9,fontWeight:900,fontFamily:"'Space Mono',monospace"}}>{(user.email||"?")[0].toUpperCase()}</span>
+                    <span style={{fontSize:8,fontWeight:600,color:C.t2,fontFamily:"'Space Mono',monospace",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{user.email}</span>
+                    {isPro&&<span style={{fontSize:6,fontWeight:800,color:C.elite,fontFamily:"'Space Mono',monospace",letterSpacing:.5}}>PRO</span>}
+                  </button>
+                :<button onClick={()=>setAuthOpen(true)} style={{height:28,padding:"0 11px",borderRadius:5,border:`1px solid ${C.acc}55`,background:C.accDim,color:C.acc,fontSize:8,fontWeight:800,fontFamily:"'Space Mono',monospace",letterSpacing:1,cursor:"pointer"}}>SIGN IN</button>}
+            {user&&acctMenu&&<>
+              <div onClick={()=>setAcctMenu(false)} style={{position:"fixed",inset:0,zIndex:149}}/>
+              <div style={{position:"absolute",right:0,top:32,zIndex:150,minWidth:170,background:C.bg2,border:`1px solid ${C.borderHi}`,borderRadius:7,boxShadow:"0 8px 28px #000a",overflow:"hidden",animation:"fadeIn .15s"}}>
+                <div style={{padding:"8px 11px",borderBottom:`1px solid ${C.border}`}}>
+                  <div style={{fontSize:9,color:C.t1,fontFamily:"'Space Mono',monospace",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{user.email}</div>
+                  <div style={{fontSize:7,color:isPro?C.elite:C.t3,fontFamily:"'Space Mono',monospace",letterSpacing:.5,marginTop:2}}>{isPro?"PRO MEMBER":"FREE TIER"}</div>
+                </div>
+                {!isPro&&<button onClick={()=>{setAcctMenu(false);setPricingOpen(true);}} style={{width:"100%",textAlign:"left",padding:"8px 11px",background:"none",border:"none",borderBottom:`1px solid ${C.border}`,color:C.elite,fontSize:9,fontWeight:700,fontFamily:"'Space Mono',monospace",cursor:"pointer"}}>◆ Upgrade to Pro</button>}
+                <button onClick={()=>{setAcctMenu(false);logout();}} style={{width:"100%",textAlign:"left",padding:"8px 11px",background:"none",border:"none",color:C.t2,fontSize:9,fontWeight:700,fontFamily:"'Space Mono',monospace",cursor:"pointer"}}>Log out</button>
+              </div>
+            </>}
+          </div>
         </div>
       </div>
       <div style={{marginTop:3,fontSize:7,color:C.t4,fontFamily:"'Space Mono',monospace"}}>{lr}</div>
@@ -575,7 +757,10 @@ export default function App(){
 
     <div style={{padding:"9px 15px 36px",maxHeight:"calc(100vh - 150px)",overflowY:"auto",borderTop:`1px solid ${C.border}`}}>
       {tab==="snipe"&&<SnipePanel players={players} search={search} listed={snListed} setListed={setSnListed} mvOv={snMvOv} setMvOv={setSnMvOv} profitMin={profitMin} setProfitMin={setProfitMin} discountMin={discountMin} setDiscountMin={setDiscountMin} matchMode={matchMode} setMatchMode={setMatchMode}/>}
-      {tab==="catalog"&&<CatalogPanel platform={plat} search={search} onAdd={addToSnipe} addedKeys={addedKeys}/>}
+      {tab==="catalog"&&<CatalogPanel platform={plat} search={search} onAdd={addToSnipe} addedKeys={addedKeys} isPro={isPro} onUpgrade={()=>setPricingOpen(true)}/>}
     </div>
+
+    {authOpen&&<AuthModal onClose={()=>setAuthOpen(false)} login={login} signup={signup}/>}
+    {pricingOpen&&<PricingModal onClose={()=>setPricingOpen(false)} user={user} isPro={isPro} onUpgrade={startCheckout} onNeedAuth={()=>{setPricingOpen(false);setAuthOpen(true);}}/>}
   </div>);
 }
