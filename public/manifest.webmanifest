@@ -1,0 +1,14 @@
+{
+  "name": "Panda Actual Sniper",
+  "short_name": "PA Sniper",
+  "description": "Live Madden 26 auction-house market intelligence — snipe radar + a mut.gg-priced catalog.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#07090d",
+  "theme_color": "#07090d",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

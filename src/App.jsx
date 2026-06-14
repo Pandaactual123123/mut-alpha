@@ -797,7 +797,7 @@ export default function App(){
     }catch(e){return{error:e.message};}
   },[]);
 
-  useEffect(()=>{const l=document.createElement("link");l.href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Outfit:wght@300;400;500;600;700;800;900&display=swap";l.rel="stylesheet";document.head.appendChild(l);setTimeout(()=>setLoaded(true),150);},[]);
+  useEffect(()=>{const t=setTimeout(()=>setLoaded(true),120);return()=>clearTimeout(t);},[]);
 
   // Pull live market values from mut.gg's public price index and merge onto the roster
   const doMutgg=useCallback(async()=>{
@@ -830,6 +830,7 @@ export default function App(){
     <style>{`@keyframes fadeIn{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}@keyframes pulse{0%,100%{opacity:.3}50%{opacity:1}}@keyframes spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}*{box-sizing:border-box}::-webkit-scrollbar{width:3px}::-webkit-scrollbar-track{background:${C.bg}}::-webkit-scrollbar-thumb{background:${C.border};border-radius:3px}input::placeholder{color:${C.t4}}`}</style>
     <div style={{position:"fixed",inset:0,pointerEvents:"none",zIndex:100,background:`repeating-linear-gradient(0deg,transparent,transparent 2px,${C.bg}05 2px,${C.bg}05 4px)`}}/>
 
+    <div style={{maxWidth:920,margin:"0 auto",position:"relative"}}>
     <div style={{padding:"11px 15px",borderBottom:`1px solid ${C.border}`,background:`linear-gradient(180deg,${C.bg2},${C.bg})`}}>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:7,flexWrap:"wrap"}}>
         <div style={{display:"flex",alignItems:"center",gap:7}}>
@@ -935,6 +936,7 @@ export default function App(){
         <div style={{fontSize:7,color:C.t4,fontFamily:"'Space Mono',monospace",letterSpacing:.5,borderTop:`1px solid ${C.border}`,paddingTop:8}}>© {new Date().getFullYear()} Panda Actual Sniper · An indie tool, built by one flipper for flippers.</div>
       </div>
     </footer>
+    </div>
 
     {authOpen&&<AuthModal onClose={()=>setAuthOpen(false)} login={login} signup={signup}/>}
     {pricingOpen&&<PricingModal onClose={()=>setPricingOpen(false)} user={user} isPro={isPro} onUpgrade={startCheckout} onNeedAuth={()=>{setPricingOpen(false);setAuthOpen(true);}}/>}
