@@ -743,6 +743,30 @@ function PricingModal({onClose,user,isPro,onUpgrade,onNeedAuth}){
   </Modal>);
 }
 
+// Password screen shown when the server gate is enabled and the visitor isn't authed.
+function GateScreen({onUnlock}){
+  const mono="'Space Mono',monospace";
+  const[pw,setPw]=useState(""),[busy,setBusy]=useState(false),[err,setErr]=useState(null);
+  const submit=async(e)=>{
+    e.preventDefault();if(busy||!pw)return;setBusy(true);setErr(null);
+    try{
+      const r=await fetch("/api/gate",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({password:pw})});
+      if(r.ok)onUnlock();else{const j=await r.json().catch(()=>({}));setErr(j.error||"Incorrect password.");}
+    }catch{setErr("Connection error.");}
+    setBusy(false);
+  };
+  return(<div style={{minHeight:"100vh",background:C.bg,color:C.t1,fontFamily:"'Outfit',sans-serif",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+    <form onSubmit={submit} style={{width:"100%",maxWidth:320,background:C.bg2,border:`1px solid ${C.border}`,borderRadius:12,padding:24,textAlign:"center"}}>
+      <div style={{width:34,height:34,borderRadius:8,margin:"0 auto 12px",display:"flex",alignItems:"center",justifyContent:"center",background:`linear-gradient(135deg,${C.acc},${C.elite})`,fontSize:16,fontWeight:900}}>◈</div>
+      <div style={{fontSize:15,fontWeight:800,letterSpacing:-.5}}>PANDA ACTUAL <span style={{color:C.acc}}>SNIPER</span></div>
+      <div style={{fontSize:9,color:C.t3,fontFamily:mono,letterSpacing:1,margin:"4px 0 16px"}}>🔒 ACCESS PASSWORD</div>
+      <input type="password" value={pw} onChange={e=>setPw(e.target.value)} autoFocus placeholder="Password" style={{width:"100%",padding:"9px 11px",background:C.bg,border:`1px solid ${err?C.err:C.border}`,borderRadius:6,color:C.t1,fontSize:13,fontFamily:mono,outline:"none",marginBottom:10}}/>
+      {err&&<div style={{fontSize:9,color:C.err,fontFamily:mono,marginBottom:10}}>{err}</div>}
+      <button type="submit" disabled={busy||!pw} style={{width:"100%",padding:"9px",borderRadius:6,border:`1px solid ${C.acc}`,background:busy||!pw?C.bg3:C.acc,color:busy||!pw?C.t4:C.bg,fontSize:12,fontWeight:800,fontFamily:mono,letterSpacing:1,cursor:busy||!pw?"default":"pointer"}}>{busy?"…":"UNLOCK"}</button>
+    </form>
+  </div>);
+}
+
 export default function App(){
   const[loaded,setLoaded]=useState(false);
   const[tab,setTab]=useLS("mut.tab","snipe");
@@ -754,6 +778,9 @@ export default function App(){
   const[plat,setPlat]=useLS("mut.plat","ps5"),[mgRfr,setMgRfr]=useState(false);
   const[heroDismissed,setHeroDismissed]=useLS("mut.hero.dismissed",false);
   const narrow=useIsNarrow();
+  // Access gate: if the server has APP_GATE_SECRET set, prompt for the password.
+  const[gate,setGate]=useState({checked:false,enabled:false,authed:true});
+  useEffect(()=>{let a=true;fetch("/api/gate").then(r=>r.json()).then(j=>{if(a)setGate({checked:true,enabled:!!j.enabled,authed:j.authed!==false});}).catch(()=>{if(a)setGate({checked:true,enabled:false,authed:true});});return()=>{a=false;};},[]);
 
   // --- Accounts & subscriptions ---
   const{user,loading:authLoading,login,signup,logout}=useAuth();
@@ -796,6 +823,8 @@ export default function App(){
     });
   },[]);
   const addedKeys=useMemo(()=>new Set(players.map(p=>`${p.name}__${p.card}__${p.pos}__${p.sub}`)),[players]);
+
+  if(gate.checked&&gate.enabled&&!gate.authed)return <GateScreen onUnlock={()=>setGate(g=>({...g,authed:true}))}/>;
 
   return(<div style={{minHeight:"100vh",background:C.bg,color:C.t1,fontFamily:"'Outfit',sans-serif",opacity:loaded?1:0,transition:"opacity .5s"}}>
     <style>{`@keyframes fadeIn{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}@keyframes pulse{0%,100%{opacity:.3}50%{opacity:1}}@keyframes spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}*{box-sizing:border-box}::-webkit-scrollbar{width:3px}::-webkit-scrollbar-track{background:${C.bg}}::-webkit-scrollbar-thumb{background:${C.border};border-radius:3px}input::placeholder{color:${C.t4}}`}</style>
