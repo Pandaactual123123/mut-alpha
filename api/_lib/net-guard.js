@@ -9,6 +9,8 @@
 // Default allowlist is EA's domains; override with EA_HOST_ALLOWLIST (comma-
 // separated host suffixes) if a captured endpoint lives on another EA host.
 
+import { lookup } from "node:dns/promises";
+
 const DEFAULT_SUFFIXES = ["ea.com", "easports.com"];
 
 function allowedSuffixes() {
@@ -47,14 +49,31 @@ function isPrivateHost(host) {
   return false;
 }
 
-// -> { ok:true, url } | { error }
-export function checkEAEndpoint(endpoint) {
+// -> Promise<{ ok:true, url } | { error }>
+// NOTE: resolve-and-check narrows DNS rebinding but does not fully eliminate the
+// check→fetch TOCTOU window (we don't pin the resolved IP on the socket). Combined
+// with the suffix allowlist (an attacker needs a real *.ea.com record), the
+// residual risk is small; full closure would require a pinned-IP fetch agent.
+export async function checkEAEndpoint(endpoint) {
   let url;
   try { url = new URL(endpoint); } catch { return { error: "Invalid endpoint URL." }; }
   if (url.protocol !== "https:") return { error: "Endpoint must be https." };
+  if (url.username || url.password) return { error: "Endpoint must not contain credentials." };
   const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, "");
   if (isPrivateHost(host)) return { error: "Endpoint host is not allowed (private/internal address)." };
   const ok = allowedSuffixes().some((suf) => host === suf || host.endsWith("." + suf));
   if (!ok) return { error: "Endpoint host is not in the allowed EA domain list." };
+
+  // For hostnames, resolve and reject if ANY address is private/internal — stops
+  // an allowlisted name (or a rebinding record) from pointing at metadata/loopback.
+  const isIpLiteral = /^\d{1,3}(\.\d{1,3}){3}$/.test(host) || host.includes(":");
+  if (!isIpLiteral) {
+    let addrs;
+    try { addrs = await lookup(host, { all: true }); } catch { return { error: "Endpoint host could not be resolved." }; }
+    if (!addrs || !addrs.length) return { error: "Endpoint host could not be resolved." };
+    for (const a of addrs) {
+      if (isPrivateHost(String(a.address).toLowerCase())) return { error: "Endpoint resolves to a private/internal address." };
+    }
+  }
   return { ok: true, url };
 }
