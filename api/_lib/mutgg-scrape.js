@@ -30,9 +30,11 @@ const decode = (s) =>
 
 const grab = (block, re) => { const m = block.exec ? null : re.exec(block); return m ? decode(m[1]) : ""; };
 
-// Parse a single card anchor block into a normalized record.
-function parseCard(block) {
-  const extId = (/playeritem\/(\d+)\.png/.exec(block) || /\/26-(\d+)\//.exec(block) || [])[1] || null;
+// Parse a single card anchor block into a normalized record. `url` is the card's
+// own href (passed in), since the href precedes the class we delimit on.
+function parseCard(block, url) {
+  const extId = (/playeritem\/(\d+)\.png/.exec(block) || [])[1]
+    || (/\/26-(\d+)\//.exec(url || "") || [])[1] || null;
   const first = (/__name-first[^>]*>([^<]+)</.exec(block) || [])[1] || "";
   const last = (/__name-last[^>]*>\s*([^<]+?)\s*</.exec(block) || [])[1] || "";
   const ovr = parseInt((/__score-value[^>]*>\s*(\d+)/.exec(block) || [])[1]) || 0;
@@ -40,7 +42,6 @@ function parseCard(block) {
   const program = decode((/__program[^>]*>([^<]+)</.exec(block) || [])[1] || "");
   const team = ((/team-logo--([a-z0-9]+)\b/.exec(block) || [])[1] || "").toUpperCase();
   const color = (/__score-color"[^>]*background-color:\s*([#0-9a-fA-F]+)/.exec(block) || [])[1] || "";
-  const slug = (/\/players\/([0-9]+-[a-z0-9-]+\/26-[0-9]+)\//.exec(block) || [])[1] || "";
 
   // Archetype field is "POS - Archetype" (e.g. "QB - Scrambler").
   let pos = "", archetype = archRaw;
@@ -55,7 +56,7 @@ function parseCard(block) {
     name, ovr, pos, archetype, program, team,
     programColor: color,
     image: extId ? `https://media.mut.gg/cdn-cgi/image/format=auto,width=100,height=100,quality=80,fit=cover,gravity=top/26/mutdb/playeritem/${extId}.png` : "",
-    url: slug ? `/players/${slug}/` : "",
+    url: url || "",
     canAuction: true,
     price: 0,
     pctChange: null,
@@ -70,11 +71,13 @@ export async function fetchCatalogPage({ page = 1, position = "", overallMin = 0
   if (!r.ok) throw new Error(`mut.gg HTTP ${r.status}`);
   const html = await r.text();
 
-  // Each card is an <a ... class="player-list-item__link"> ... </a> block.
+  // Match each card anchor whole — href (its own slug) then the class we key on,
+  // up to the closing </a>. Anchors don't nest, so the lazy body is correct.
   const cards = [];
-  const parts = html.split('player-list-item__link');
-  for (let i = 1; i < parts.length; i++) {
-    const card = parseCard(parts[i]);
+  const re = /<a\s+href="(\/players\/[0-9]+-[a-z0-9-]+\/26-[0-9]+\/)"\s+class="player-list-item__link"([\s\S]*?)<\/a>/g;
+  let m;
+  while ((m = re.exec(html))) {
+    const card = parseCard(m[2], m[1]);
     if (card) cards.push(card);
   }
   // mut.gg renders a "next" pager link (?page=N+1) while more pages remain.
