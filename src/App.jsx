@@ -166,7 +166,7 @@ function SnipePanel({players,search,listed,setListed,mvOv,setMvOv,profitMin,setP
   const[scanRes,setScanRes]=useState(null),[scanning,setScanning]=useState(false);
   const[feedRotate,setFeedRotate]=useLS("mut.feed.rotate","");
   const prevSnipes=useRef(new Set());
-  const backoffRef=useRef(1),seenRef=useRef(new Set()),rotRef=useRef(0);
+  const backoffRef=useRef(1),seenRef=useRef(new Set()),weightsRef=useRef([]),creditsRef=useRef([]),startRef=useRef(0);
 
   // On-demand server-side scan: one read-only fetch + server margin math.
   async function doScan(){
@@ -189,18 +189,30 @@ function SnipePanel({players,search,listed,setListed,mvOv,setMvOv,profitMin,setP
 
   // Adaptive poll loop: self-schedules at the floor interval, backs off
   // exponentially on rate-limits/errors (so we never hammer EA into a ban) and
-  // recovers on clean polls. Rotates through extra search bodies for coverage,
-  // and flags listings new since the previous poll.
+  // recovers on clean polls. Weighted round-robin spends more polls on the
+  // higher-velocity (hotter) searches. Auto-pauses after 30 min — a solo safety
+  // cap so a personal account never polls indefinitely unattended.
   useEffect(()=>{
     if(!feedOn||!feedUrl)return;
-    let alive=true,timer=null;
+    const CAP_MS=30*60*1000;
+    let alive=true,timer=null,capped=false;
     const floor=Math.max(2,feedSecs);
     const stamp=()=>new Date().toLocaleTimeString("en",{hour12:false});
     const bodies=()=>{const extra=(feedRotate||"").split("\n").map(s=>s.trim()).filter(Boolean);return [feedBody.trim(),...extra];};
-    backoffRef.current=1;
+    const n=bodies().length;
+    backoffRef.current=1;startRef.current=Date.now();
+    weightsRef.current=Array(n).fill(1);creditsRef.current=Array(n).fill(0);
+    // Weighted round-robin: accumulate weight as credit, serve the highest, deduct.
+    const pickIdx=()=>{
+      const w=weightsRef.current,c=creditsRef.current;if(w.length<=1)return 0;
+      let total=0,best=0;for(let i=0;i<w.length;i++){c[i]+=w[i];total+=w[i];}
+      for(let i=1;i<c.length;i++)if(c[i]>c[best])best=i;
+      c[best]-=total;return best;
+    };
     const poll=async()=>{
+      if(Date.now()-startRef.current>=CAP_MS){capped=true;setFeedOn(false);setFeedStat({ok:false,err:"auto-paused after 30 min — click Start to resume",ts:stamp()});return;}
+      const bs=bodies();const idx=Math.min(pickIdx(),bs.length-1);const body=bs[idx]||"";
       try{
-        const bs=bodies();const body=bs[rotRef.current%bs.length]||"";rotRef.current++;
         const r=await fetch("/api/ah-feed",{method:"POST",headers:{"Content-Type":"application/json"},
           body:JSON.stringify({endpoint:feedUrl,method:body?"POST":"GET",token:feedTok,body:body||undefined})});
         const j=await r.json();
@@ -216,10 +228,13 @@ function SnipePanel({players,search,listed,setListed,mvOv,setMvOv,profitMin,setP
         const prev=seenRef.current;
         const list=Array.isArray(arr)?arr.map(it=>{const name=String(readPath(it,nameKey)??"?");const buyNow=Number(readPath(it,priceKey))||0;const sig=`${name}@${buyNow}`;return{name,buyNow,sig,isNew:!prev.has(sig)};}):[];
         seenRef.current=new Set(list.map(x=>x.sig));
+        const newCount=list.filter(x=>x.isNew).length;
+        // Hotter searches (more fresh listings) earn more weight → polled more often.
+        if(weightsRef.current[idx]!=null)weightsRef.current[idx]=Math.max(0.25,0.6*weightsRef.current[idx]+0.4*(1+newCount));
         setListings(list);
-        setFeedStat({ok:true,count:list.length,newCount:list.filter(x=>x.isNew).length,ts:stamp(),wait:floor});
+        setFeedStat({ok:true,count:list.length,newCount,ts:stamp(),wait:floor,slice:n>1?`${idx+1}/${n}`:null});
       }catch(e){if(alive){backoffRef.current=Math.min(8,backoffRef.current*1.5);setFeedStat({ok:false,err:e.message,ts:stamp(),wait:Math.round(floor*backoffRef.current)});}}
-      finally{if(alive)timer=setTimeout(poll,Math.min(60,floor*backoffRef.current)*1000);}
+      finally{if(alive&&!capped)timer=setTimeout(poll,Math.min(60,floor*backoffRef.current)*1000);}
     };
     poll();
     return()=>{alive=false;if(timer)clearTimeout(timer);};
@@ -331,7 +346,7 @@ function SnipePanel({players,search,listed,setListed,mvOv,setMvOv,profitMin,setP
         <div style={{width:5,height:5,borderRadius:"50%",flexShrink:0,background:feedOn?(feedStat?.ok?C.acc:C.err):C.t4,animation:feedOn?"pulse 1.5s infinite":"none"}}/>
         <span style={{fontSize:8,fontWeight:700,color:C.t2,fontFamily:mono,letterSpacing:1}}>LIVE FEED</span>
         <span style={{fontSize:6,color:C.warn,fontFamily:mono,background:C.warnDim,padding:"1px 4px",borderRadius:2}}>READ-ONLY · ToS RISK</span>
-        {feedStat&&<span style={{fontSize:6,color:feedStat.ok?C.t3:C.err,fontFamily:mono,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{feedStat.ok?`${feedStat.count} listings · ${feedStat.newCount||0} new · ${feedSnipes} snipes · ${feedStat.wait}s · ${feedStat.ts}`:`${feedStat.err} · retry ${feedStat.wait||""}s · ${feedStat.ts}`}</span>}
+        {feedStat&&<span style={{fontSize:6,color:feedStat.ok?C.t3:C.err,fontFamily:mono,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{feedStat.ok?`${feedStat.count} listings · ${feedStat.newCount||0} new · ${feedSnipes} snipes · ${feedStat.slice?"#"+feedStat.slice+" · ":""}${feedStat.wait}s · ${feedStat.ts}`:`${feedStat.err}${feedStat.wait?" · retry "+feedStat.wait+"s":""} · ${feedStat.ts}`}</span>}
         <div style={{flex:1}}/>
         <span style={{fontSize:7,color:C.t4,transform:feedOpen?"rotate(180deg)":"",display:"inline-block",transition:"transform .2s"}}>▼</span>
       </button>
@@ -374,6 +389,7 @@ function SnipePanel({players,search,listed,setListed,mvOv,setMvOv,profitMin,setP
           <div style={{fontSize:6,color:C.t3,fontFamily:mono,letterSpacing:1,marginBottom:2}}>ROTATE SEARCHES — extra bodies, one JSON per line (widens coverage, same token)</div>
           <textarea value={feedRotate} onChange={e=>setFeedRotate(e.target.value)} placeholder='{"filter":"...QB..."}&#10;{"filter":"...WR..."}' rows={2} style={{...inp,fontSize:9,padding:"4px 6px",resize:"vertical"}}/>
         </label>
+        <div style={{fontSize:6,color:C.t4,fontFamily:mono,marginBottom:6,lineHeight:1.5}}>Hotter searches (more fresh listings) are polled more often. Feed auto-pauses after 30 min — click Start to resume.</div>
         {/* ToS acknowledgement gate — required before the feed can start */}
         <label style={{display:"flex",gap:7,alignItems:"flex-start",marginBottom:7,padding:"7px 8px",borderRadius:5,background:C.errDim,border:`1px solid ${C.err}66`,cursor:"pointer"}}>
           <input type="checkbox" checked={feedAck} onChange={e=>setFeedAck(e.target.checked)} style={{marginTop:1,accentColor:C.err,cursor:"pointer",flexShrink:0}}/>
