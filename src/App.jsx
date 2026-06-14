@@ -478,9 +478,10 @@ function CatalogPanel({platform,search,onAdd,addedKeys,isPro,onUpgrade}){
   const[page,setPage]=useState(1),[hasMore,setHasMore]=useState(false),[mode,setMode]=useState("browse"),[err,setErr]=useState(null);
 
   // Search is a Pro feature; free users browse the paginated metadata catalog.
+  // Paywall dropped — name search is free for everyone (single-user build).
   const searching=!!search.trim();
-  const effQ=isPro?search.trim():"";
-  const locked=searching&&!isPro;
+  const effQ=search.trim();
+  const locked=false;
 
   // Reset to page 1 whenever the query shape changes.
   useEffect(()=>{setPage(1);},[platform,effQ,sort,position,ovrMin,auctionOnly]);
