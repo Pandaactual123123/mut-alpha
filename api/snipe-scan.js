@@ -20,6 +20,8 @@ import { checkEAEndpoint } from "./_lib/net-guard.js";
 const BLOCKED = /(purchase|checkout|\/buy\b|\bbid\b|\/sell\b|\blist\b|transfermarket\/.*\/(buy|bid))/i;
 const AH_TAX = 0.10;
 const PLAT_FIELD = { pc: "pcPrice", ps5: "ps5Price", ps4: "ps4Price", xbsx: "xbsxPrice", xb1: "xb1Price" };
+const FWD_HEADERS = new Set(["authorization","x-blaze-session","x-blaze-id","x-application-key","x-pin","x-pow","easw-session-data-nucleus-id","x-ut-sid","x-http-method-override","content-type","accept"]);
+const MAX_MV = 5000, MAX_LISTINGS = 1000;
 
 const readPath = (obj, path) =>
   path == null || path === "" ? obj : String(path).split(".").reduce((o, k) => (o == null ? undefined : o[k]), obj);
@@ -60,7 +62,7 @@ export default async function handler(req, res) {
 
   if (!endpoint) return res.status(400).json({ error: "Missing feed.endpoint." });
   // SSRF guard: https + allowed EA host only, no private/internal addresses.
-  const chk = checkEAEndpoint(endpoint);
+  const chk = await checkEAEndpoint(endpoint);
   if (!chk.ok) return res.status(400).json({ error: chk.error });
   const url = chk.url;
   const m = String(method).toUpperCase();
@@ -73,7 +75,9 @@ export default async function handler(req, res) {
   }
 
   const field = PLAT_FIELD[platform] || PLAT_FIELD.ps5;
-  const fwd = { Accept: "application/json", ...headers };
+  // Forward only whitelisted EA auth headers (no arbitrary header relay).
+  const fwd = { Accept: "application/json" };
+  for (const [k, v] of Object.entries(headers || {})) if (FWD_HEADERS.has(String(k).toLowerCase())) fwd[k] = v;
   if (token && !fwd.Authorization && !fwd.authorization) fwd.Authorization = token;
 
   try {
@@ -86,16 +90,16 @@ export default async function handler(req, res) {
     let payload; try { payload = JSON.parse(text); } catch { payload = text; }
     if (!r.ok) return res.status(200).json({ ok: false, status: r.status, error: "EA request failed", snipes: [] });
 
-    // 2) Parse listings via the caller-supplied JSON paths.
+    // 2) Parse listings via the caller-supplied JSON paths (capped).
     const arr = readPath(payload, arrPath);
-    const listings = (Array.isArray(arr) ? arr : []).map((it) => ({
-      name: String(readPath(it, nameKey) ?? "").trim(),
+    const listings = (Array.isArray(arr) ? arr : []).slice(0, MAX_LISTINGS).map((it) => ({
+      name: String(readPath(it, nameKey) ?? "").trim().slice(0, 120),
       buyNow: Number(readPath(it, priceKey)) || 0,
     })).filter((l) => l.name && l.buyNow > 0);
 
     // 3) Value each listing: caller-provided map first, then a capped mut.gg lookup.
     const provided = {};
-    for (const k of Object.keys(marketValues)) provided[normName(k)] = Number(marketValues[k]) || 0;
+    for (const k of Object.keys(marketValues || {}).slice(0, MAX_MV)) provided[normName(k)] = Number(marketValues[k]) || 0;
     let lookups = 0;
     const MAX_LOOKUPS = 12;
     const valued = [];
@@ -118,6 +122,7 @@ export default async function handler(req, res) {
       snipes,
     });
   } catch (e) {
-    return res.status(200).json({ ok: false, status: 0, error: e.message, snipes: [] });
+    console.error("snipe-scan error:", e.message);
+    return res.status(200).json({ ok: false, status: 0, error: "Scan failed", snipes: [] });
   }
 }

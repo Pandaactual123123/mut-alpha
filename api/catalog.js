@@ -106,6 +106,7 @@ export default async function handler(req, res) {
 
     return res.status(200).json({ data, page, platform: platKey, sort, query: q, hasMore, mode });
   } catch (err) {
-    return res.status(200).json({ data: [], page, platform: platKey, hasMore: false, error: err.message });
+    console.error("catalog error:", err.message);
+    return res.status(200).json({ data: [], page, platform: platKey, hasMore: false, error: "Catalog fetch failed" });
   }
 }

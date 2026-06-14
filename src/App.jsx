@@ -572,8 +572,9 @@ function CatalogPanel({platform,search,onAdd,addedKeys,isPro,onUpgrade}){
 
 // ---- Accounts & subscriptions (Phase 4) ------------------------------------
 // useAuth: loads the current user from /api/auth/me on mount and exposes the
-// auth actions. All network state is server-backed (HttpOnly session cookie),
-// so there's nothing sensitive in localStorage here.
+// auth actions. Auth state is server-backed (HttpOnly session cookie). NOTE: the
+// live-feed EA token IS persisted in localStorage (mut.feed.tok) for convenience —
+// it's a live credential at rest, exposed to XSS/shared-machine access.
 function useAuth(){
   const[user,setUser]=useState(null);
   const[loading,setLoading]=useState(true);

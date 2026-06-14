@@ -47,7 +47,9 @@ function verifyStripeSig(rawBody, header, secret) {
   const { t, v1 } = parseSigHeader(header);
   if (!t || !v1.length) return false;
   const ts = parseInt(t, 10);
-  if (!Number.isFinite(ts) || Math.abs(Date.now() / 1000 - ts) > 300) return false;
+  // Reject stale (>5min old) and future-dated (>60s ahead) timestamps.
+  const age = Date.now() / 1000 - ts;
+  if (!Number.isFinite(ts) || age > 300 || age < -60) return false;
   const expected = createHmac("sha256", secret).update(`${t}.${rawBody.toString("utf8")}`).digest("hex");
   const expBuf = Buffer.from(expected);
   return v1.some((sig) => {

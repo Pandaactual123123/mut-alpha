@@ -16,6 +16,15 @@ import { checkEAEndpoint } from "./_lib/net-guard.js";
 
 const BLOCKED = /(purchase|checkout|\/buy\b|\bbid\b|\/sell\b|\blist\b|transfermarket\/.*\/(buy|bid))/i;
 
+// Only these caller-supplied headers are forwarded to EA — never spread arbitrary
+// headers (prevents header-smuggling / using us as an arbitrary authed relay).
+const FWD_HEADERS = new Set(["authorization","x-blaze-session","x-blaze-id","x-application-key","x-pin","x-pow","easw-session-data-nucleus-id","x-ut-sid","x-http-method-override","content-type","accept"]);
+function pickHeaders(headers) {
+  const out = { Accept: "application/json" };
+  for (const [k, v] of Object.entries(headers || {})) if (FWD_HEADERS.has(String(k).toLowerCase())) out[k] = v;
+  return out;
+}
+
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
@@ -25,7 +34,7 @@ export default async function handler(req, res) {
   if (!endpoint) return res.status(400).json({ error: "Missing 'endpoint'." });
 
   // SSRF guard: https + allowed EA host only, no private/internal addresses.
-  const chk = checkEAEndpoint(endpoint);
+  const chk = await checkEAEndpoint(endpoint);
   if (!chk.ok) return res.status(400).json({ error: chk.error });
   const url = chk.url;
 
@@ -40,10 +49,8 @@ export default async function handler(req, res) {
     return res.status(403).json({ error: "Blocked: this feed is read-only (no buy/bid/sell)." });
   }
 
-  // Build forwarded headers. EA endpoints use varying auth headers
-  // (Authorization, X-BLAZE-SESSION, X-Pin, etc.) — pass whatever you captured
-  // via `headers`. `token` is a convenience that fills Authorization if unset.
-  const fwd = { Accept: "application/json", ...headers };
+  // Forward only whitelisted EA auth headers. `token` fills Authorization if unset.
+  const fwd = pickHeaders(headers);
   if (token && !fwd.Authorization && !fwd.authorization) fwd.Authorization = token;
 
   try {
@@ -57,6 +64,7 @@ export default async function handler(req, res) {
     try { data = JSON.parse(text); } catch { data = text; }
     return res.status(200).json({ ok: r.ok, status: r.status, data });
   } catch (e) {
-    return res.status(200).json({ ok: false, status: 0, error: e.message });
+    console.error("ah-feed error:", e.message);
+    return res.status(200).json({ ok: false, status: 0, error: "EA request failed" });
   }
 }
