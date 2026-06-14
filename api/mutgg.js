@@ -8,6 +8,8 @@
 //   platform ∈ pc | ps5 | ps4 | xbsx | xb1
 // -> { platform, prices: [{key, price, matchedOvr, matchedProgram, matched}] }
 
+import { checkGate } from "./_lib/gate.js";
+
 const PLAT = { pc: "pcPrice", ps5: "ps5Price", ps4: "ps4Price", xbsx: "xbsxPrice", xb1: "xb1Price" };
 const norm = s => String(s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
 // Strip parentheticals and name suffixes so the search term matches mut.gg's records
@@ -50,6 +52,7 @@ function pickBest(cands, want) {
 
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+  if (!checkGate(req).ok) return res.status(401).json({ error: "Locked — enter the access password." });
   const { players = [], platform = "ps5" } = req.body || {};
   const field = PLAT[platform] || PLAT.ps5;
   if (!Array.isArray(players) || !players.length) return res.status(400).json({ error: "Missing players[]." });

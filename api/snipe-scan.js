@@ -16,6 +16,7 @@
 //     Agreement and can get the account banned. Use an account you can lose.
 
 import { checkEAEndpoint } from "./_lib/net-guard.js";
+import { checkGate } from "./_lib/gate.js";
 
 const BLOCKED = /(purchase|checkout|\/buy\b|\bbid\b|\/sell\b|\blist\b|transfermarket\/.*\/(buy|bid))/i;
 const AH_TAX = 0.10;
@@ -53,6 +54,7 @@ async function lookupValue(name, field) {
 
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+  if (!checkGate(req).ok) return res.status(401).json({ error: "Locked — enter the access password." });
 
   const {
     feed = {}, platform = "ps5", marketValues = {},

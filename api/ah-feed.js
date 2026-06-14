@@ -13,6 +13,7 @@
 // when read-only. Use on an account you're willing to lose.
 
 import { checkEAEndpoint } from "./_lib/net-guard.js";
+import { checkGate } from "./_lib/gate.js";
 
 const BLOCKED = /(purchase|checkout|\/buy\b|\bbid\b|\/sell\b|\blist\b|transfermarket\/.*\/(buy|bid))/i;
 
@@ -29,6 +30,7 @@ export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
+  if (!checkGate(req).ok) return res.status(401).json({ error: "Locked — enter the access password." });
 
   const { endpoint, method = "GET", token, headers = {}, body } = req.body || {};
   if (!endpoint) return res.status(400).json({ error: "Missing 'endpoint'." });

@@ -13,6 +13,8 @@
 //   sort     ∈ ovr_desc | ovr_asc | price_desc | price_asc | change_desc | change_asc
 // -> { data:[...], page, platform, hasMore, mode }
 
+import { checkGate } from "./_lib/gate.js";
+
 const PLAT = {
   pc:   { price: "pcPrice",   chg: "pcPercentChange",   disp: "pcPriceDisplay" },
   ps5:  { price: "ps5Price",  chg: "ps5PercentChange",  disp: "ps5PriceDisplay" },
@@ -64,6 +66,7 @@ async function searchByName(q) {
 }
 
 export default async function handler(req, res) {
+  if (!checkGate(req).ok) return res.status(401).json({ error: "Locked — enter the access password." });
   const src = req.method === "POST" ? (req.body || {}) : (req.query || {});
   const platKey = PLAT[src.platform] ? src.platform : "ps5";
   const plat = PLAT[platKey];
