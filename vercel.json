@@ -4,9 +4,6 @@
   "framework": "vite",
   "installCommand": "npm install",
   "functions": {
-    "api/proxy.js": {
-      "maxDuration": 60
-    },
     "api/mutgg.js": {
       "maxDuration": 30
     }

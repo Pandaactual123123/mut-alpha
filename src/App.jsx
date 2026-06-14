@@ -12,51 +12,6 @@ const C = {
   coin:"#fbbf24",
 };
 
-const PC = {
-  QB:{subs:null},
-  HB:{subs:["Elusive","Power"]},
-  WR:{subs:null},
-  OL:{subs:["LT","LG","C","RG","RT"]},
-  DL:{subs:["LEDG","DT","REDG"]},
-  DB:{subs:["CB","FS","SS"]},
-};
-
-const ENGINES={
-  QB:{engine:"QB META SCORE V2",formula:"QMS_V2 = [(AP_Score×.50)+(SPD_Adj×.20)+(THP×.30)]×REL_mult"},
-  HB_Elusive:{engine:"ELUSIVE BACK ENGINE",formula:"E-RBVS = [(SPD×.35)+(COD×.30)+(REC×.20)+(ELU×.15)]×ACC_mult"},
-  HB_Power:{engine:"POWER BACK ENGINE",formula:"P-RBVS = [(BTK×.30)+(SPD×.25)+(SFA×.25)+(TRK×.20)]×WGT_mult"},
-  HB:{engine:"RB DUAL ENGINE",formula:"Select Elusive or Power to see formula"},
-  WR:{engine:"WR EVAL ENGINE V2",formula:"WREE = (BEV×.35)+(RLS×.10)+(REC×.10)+(PDM×.15)+(AEQ×.30)"},
-  OL:{engine:"OL DUAL BLOCKING ENGINE",formula:"P-TBS = [(PBK×.50)+(AWR×.30)+(STR×.20)]×WGT | R-TBS = [(RBK×.40)+(IBL×.30)+(STR×.30)]×SPD"},
-  DL_LEDG:{engine:"EDGE RUSHER SCORE",formula:"E-MVS = [(BestRush×.40)+(ACC×.30)+(SPD×.30)]×Trait_gate"},
-  DL_DT:{engine:"INTERIOR PRESSURE SCORE",formula:"I-MVS = [(BSH×.40)+(STR×.30)+(PMV×.30)]×WGT_mult"},
-  DL_REDG:{engine:"EDGE RUSHER SCORE",formula:"E-MVS = [(BestRush×.40)+(ACC×.30)+(SPD×.30)]×Trait_gate"},
-  DL:{engine:"DL SHED ENGINE V2",formula:"E-MVS (Edges) / I-MVS (Interior)"},
-  DB:{engine:"TRUE COVERAGE SCORE V2",formula:"TCS_V2 = [(COV_avg×.30)+(SPD×.30)+(PRS×.15)+(AP_Val×.25)]×DNA_mult"},
-};
-function getEng(pos,sub){return ENGINES[sub?`${pos}_${sub}`:pos]||ENGINES[pos]||{engine:"—",formula:"—"};}
-
-const QB_S=["SPD","AGI","THP","SAC","MAC","DAC"];
-const HB_EL_S=["SPD","ACC","COD","REC","ELU"];
-const HB_PW_S=["SPD","BTK","SFA","TRK"];
-const HB_ALL_S=["SPD","ACC","COD","BTK","TRK"];
-const WR_S=["SPD","CTH","SRR","MRR","DRR"];
-const OL_S=["PBK","RBK","AWR","STR","IBL"];
-const DL_EDGE_S=["SPD","ACC","PMV","FMV","STR"];
-const DT_S=["BSH","PMV","STR","TAK","SPD"];
-const CB_S=["SPD","MCV","ZCV","PRS","JMP"];
-const FS_S=["SPD","MCV","ZCV","TAK","POW"];
-const SS_S=["SPD","MCV","ZCV","TAK","POW"];
-function gS(p,s){
-  if(p==="QB")return QB_S;
-  if(p==="HB"){if(s==="Elusive")return HB_EL_S;if(s==="Power")return HB_PW_S;return HB_ALL_S;}
-  if(p==="WR")return WR_S;
-  if(p==="OL")return OL_S;
-  if(p==="DL")return s==="DT"?DT_S:DL_EDGE_S;
-  if(p==="DB"){if(s==="CB")return CB_S;if(s==="FS")return FS_S;return SS_S;}
-  return[];
-}
-
 const INIT=[
   {pos:"QB",sub:"QB",name:"Robert Griffin III",card:"Flashbacks",ovr:96,arch:"Scrambler",start:17.0,price:0,rel:"",abilities:[],s:{SPD:94,AGI:93,THP:96,SAC:93,MAC:92,DAC:96}},
   {pos:"QB",sub:"QB",name:"Drake Maye",card:"Season 5 FP",ovr:95,arch:"Strong Arm",start:10.5,price:0,rel:"",abilities:[],s:{SPD:90,AGI:87,THP:94,SAC:96,MAC:92,DAC:92}},
@@ -120,47 +75,6 @@ const INIT=[
   {pos:"DB",sub:"SS",name:"Coby Bryant",card:"Super Bowl",ovr:96,arch:"Zone",start:5.7,price:0,dna:"Standard",abilities:[{name:"Deep Out Zone KO",ap:0}],s:{SPD:95,TAK:94,POW:94,MCV:96,ZCV:98,PRS:86,JMP:92}},
 ];
 
-const THRESHOLDS=[
-  {a:"ZCV",v:90,l:"Zone Coverage",e:"Elite break-on-ball — initiates break AS ball releases",c:"CONFIRMED"},
-  {a:"MCV",v:90,l:"Man Coverage",e:"Tightest trail technique; prevents instant displacement",c:"CONFIRMED"},
-  {a:"RLS vs PRS",v:90,l:"Release vs Press",e:"Clean release animation; bypasses 5-yard jam zone",c:"CONFIRMED"},
-  {a:"SRR/MRR/DRR",v:90,l:"Route Running",e:"Max crispness — 91 = 99 (aggressive diminishing returns)",c:"CONFIRMED"},
-  {a:"SAC",v:85,l:"Short Accuracy",e:"Elite short window — bypasses errant throw RNG",c:"CONFIRMED"},
-  {a:"MAC",v:90,l:"Medium Accuracy",e:"Bypass errant throw algorithms (10-20 yds)",c:"CONFIRMED"},
-  {a:"DAC",v:95,l:"Deep Accuracy",e:"Elite deep accuracy window (20+ yds)",c:"CONFIRMED"},
-  {a:"TUP",v:90,l:"Throw Under Pressure",e:"Prevents accuracy collapse in dirty pocket",c:"CONFIRMED"},
-  {a:"COD",v:90,l:"Change of Direction",e:"Speed burst animation on redirect",c:"CONFIRMED"},
-  {a:"WGT(DT)",v:300,l:"DT Weight Floor",e:"Interior competitive minimum for full multiplier",c:"CONFIRMED"},
-  {a:"WGT(OL)",v:290,l:"OL Elite Jump",e:"+14.22 hold logic bonus to T_Score",c:"CONFIRMED"},
-];
-
-const RM=[
-  {pos:"QB",sub:"QB",label:"Quarterbacks"},
-  {pos:"HB",sub:"Elusive",label:"Elusive Backs"},
-  {pos:"HB",sub:"Power",label:"Power Backs"},
-  {pos:"WR",sub:"WR",label:"Wide Receivers"},
-  {pos:"OL",sub:"LT",label:"Left Tackles"},{pos:"OL",sub:"LG",label:"Left Guards"},
-  {pos:"OL",sub:"C",label:"Centers"},{pos:"OL",sub:"RG",label:"Right Guards"},
-  {pos:"OL",sub:"RT",label:"Right Tackles"},
-  {pos:"DL",sub:"LEDG",label:"Left Edges"},{pos:"DL",sub:"DT",label:"Defensive Tackles"},
-  {pos:"DL",sub:"REDG",label:"Right Edges"},
-  {pos:"DB",sub:"CB",label:"Cornerbacks"},{pos:"DB",sub:"FS",label:"Free Safeties"},
-  {pos:"DB",sub:"SS",label:"Strong Safeties"},
-];
-
-async function fetchLive(label,pos,sub){
-  try{
-    const r=await fetch("/api/proxy",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({label,pos,sub})});
-    if(!r.ok){console.error(`Proxy HTTP error for ${label}: ${r.status}`);return null;}
-    const d=await r.json();
-    const t=d.content?.filter(b=>b.type==="text").map(b=>b.text).join("\n")||"";
-    const c=t.replace(/```json|```/g,"").trim();
-    const p=JSON.parse(c);
-    if(Array.isArray(p)&&p.length>0&&p[0].name)return p;
-  }catch(e){console.error(`Live fetch failed for ${label}:`,e);}
-  return null;
-}
-
 function fPrice(p){if(!p||p<=0)return null;if(p>=1000000)return(p/1000000).toFixed(2).replace(/\.?0+$/,"")+"M";if(p>=1000)return Math.round(p/1000)+"K";return p.toLocaleString();}
 
 // Persist a piece of state to localStorage so config/thresholds survive reloads
@@ -168,6 +82,20 @@ function useLS(key,init){
   const[v,setV]=useState(()=>{try{const s=localStorage.getItem(key);return s!=null?JSON.parse(s):init;}catch{return init;}});
   useEffect(()=>{try{localStorage.setItem(key,JSON.stringify(v));}catch{}},[key,v]);
   return[v,setV];
+}
+
+// Track whether the viewport is phone-narrow so dense rows can simplify.
+// Lightweight: one matchMedia listener, cleaned up on unmount.
+function useIsNarrow(bp=560){
+  const q=`(max-width:${bp}px)`;
+  const[narrow,setNarrow]=useState(()=>typeof window!=="undefined"&&typeof window.matchMedia!=="undefined"?window.matchMedia(q).matches:false);
+  useEffect(()=>{
+    if(typeof window==="undefined"||typeof window.matchMedia==="undefined")return;
+    const m=window.matchMedia(q);const on=()=>setNarrow(m.matches);on();
+    try{m.addEventListener("change",on);return()=>m.removeEventListener("change",on);}
+    catch{m.addListener(on);return()=>m.removeListener(on);}
+  },[q]);
+  return narrow;
 }
 
 // Short beep via WebAudio — used to alert when a fresh snipe appears
@@ -191,429 +119,34 @@ function parseCoins(str){
   return Math.round(n);
 }
 
-function getRelTier(rel){
-  const r=(rel||"").toLowerCase().replace(/[\s_-]/g,"");
-  if(!r)return null;
-  if(["slinger1","traditional4","generic1"].some(x=>r.includes(x)))return{tier:"S",mult:1.15,color:C.acc,label:"S-Tier"};
-  if(["traditional5","slinger4"].some(x=>r.includes(x)))return{tier:"F",mult:0.85,color:C.err,label:"F-Tier"};
-  if(["slinger3","generic3"].some(x=>r.includes(x)))return{tier:"A",mult:1.0,color:C.blue,label:"A-Tier"};
-  return{tier:"?",mult:1.0,color:C.t4,label:"Unknown"};
+// Normalize a player name for matching: lowercase, strip accents, parentheticals,
+// name suffixes (Jr/Sr/II-V), and all punctuation/spacing. Mirrors api/mutgg.js's
+// norm+searchName approach so live-feed listings match the roster reliably.
+function normName(s){
+  return String(s||"")
+    .normalize("NFKD").replace(/[̀-ͯ]/g,"")   // strip accents
+    .toLowerCase()
+    .replace(/\([^)]*\)/g,"")                            // drop parentheticals
+    .replace(/\b(jr|sr|ii|iii|iv|v)\b\.?/g,"")           // drop name suffixes
+    .replace(/[^a-z0-9]/g,"");                            // drop all punctuation/space
 }
 
-function calcQMS(p){
-  if(!p||p.pos!=="QB")return null;
-  const abs=Array.isArray(p.abilities)?p.abilities:[];
-  let apScore=0;
-  for(const a of abs){
-    const n=(a.name||"").toLowerCase();
-    const ap=typeof a.ap==="number"?a.ap:99;
-    if((n.includes("set feet lead")||n.includes("pass lead elite"))&&ap<=1)apScore=Math.max(apScore,50);
-    else if(n.includes("gunslinger")&&ap===0)apScore=Math.max(apScore,30);
-    else if((n.includes("hot route master")||n.includes("master tactician"))&&ap<=1)apScore=Math.max(apScore,20);
-  }
-  const spd=p.s?.SPD||0,agi=p.s?.AGI||0;
-  const spdAdj=agi>0?(spd+agi)/2:spd;
-  const thp=p.s?.THP||0;
-  const rt=getRelTier(p.rel);
-  const relMult=rt&&rt.tier!=="?"?rt.mult:1.0;
-  return Math.round(((apScore*0.50)+(spdAdj*0.20)+(thp*0.30))*relMult*10)/10;
+// Deterministic 0–100 "heat" score for a snipe — blends profit margin (profit vs
+// market value) and discount %. Higher = hotter. Cheap; no randomness.
+function heatScore(profit,disc,mv){
+  if(profit==null||disc==null||!mv)return 0;
+  const marginPct=Math.max(0,Math.min(100,(profit/mv)*100)); // after-tax profit as % of mv
+  const d=Math.max(0,Math.min(100,disc));
+  return Math.max(0,Math.min(100,Math.round(marginPct*0.6+d*0.4)));
 }
+// Color ramp for a heat score: hot→acc, mid→warn, low→t3.
+function heatColor(h){return h>=66?C.acc:h>=33?C.warn:C.t3;}
+// Small colored heat badge for a snipe row — higher heat = hotter color.
+function HeatBadge({h}){const c=heatColor(h);return<span title={`heat ${h}/100`} style={{fontSize:7,fontWeight:800,fontFamily:"'Space Mono',monospace",color:c,background:c+"22",border:`1px solid ${c}55`,borderRadius:3,padding:"0 3px",lineHeight:1.4,flexShrink:0}}>{h}</span>;}
 
-// E-RBVS: Elusive Back Value Score
-function calcERBVS(p){
-  if(!p||p.sub!=="Elusive")return null;
-  const spd=p.s?.SPD||0,cod=p.s?.COD||0,rec=p.s?.REC||0,elu=p.s?.ELU||0,acc=p.s?.ACC||0;
-  const base=(spd*0.35)+(cod*0.30)+(rec*0.20)+(elu*0.15);
-  const accMult=acc>=97?1.05:1.0;
-  return Math.round(base*accMult*10)/10;
-}
-
-// P-RBVS: Power Back Value Score
-function calcPRBVS(p){
-  if(!p||p.sub!=="Power")return null;
-  const btk=p.s?.BTK||0,spd=p.s?.SPD||0,sfa=p.s?.SFA||0,trk=p.s?.TRK||0;
-  const wgt=p.wgt||220;
-  const base=(btk*0.30)+(spd*0.25)+(sfa*0.25)+(trk*0.20);
-  const wgtMult=wgt>=245?1.15:wgt>=230?1.10:wgt<225?0.85:1.0;
-  return Math.round(base*wgtMult*10)/10;
-}
-
-// P-TBS: Pass Blocking Score (OL)
-function calcPTBS(p){
-  if(!p||p.pos!=="OL")return null;
-  const pbk=p.s?.PBK||0,awr=p.s?.AWR||0,str=p.s?.STR||0;
-  const wgt=p.wgt||300;
-  const base=(pbk*0.50)+(awr*0.30)+(str*0.20);
-  const wgtMult=wgt>=330?1.15:wgt>=300?1.0:0.80;
-  return Math.round(base*wgtMult*10)/10;
-}
-
-// R-TBS: Run Blocking Score (OL)
-function calcRTBS(p){
-  if(!p||p.pos!=="OL")return null;
-  const rbk=p.s?.RBK||0,ibl=p.s?.IBL||0,str=p.s?.STR||0,spd=p.s?.SPD||0;
-  const base=(rbk*0.40)+(ibl*0.30)+(str*0.30);
-  const isInterior=["LG","C","RG"].includes(p.sub);
-  const spdAdj=isInterior&&spd<75?0.90:1.0;
-  return Math.round(base*spdAdj*10)/10;
-}
-
-// E-MVS: Edge Rusher Move Score (DL LEDG/REDG)
-function calcEMVS(p){
-  if(!p||!["LEDG","REDG"].includes(p.sub))return null;
-  const pmv=p.s?.PMV||0,fmv=p.s?.FMV||0,acc=p.s?.ACC||0,spd=p.s?.SPD||0;
-  const bestRush=Math.max(pmv,fmv);
-  const base=(bestRush*0.40)+(acc*0.30)+(spd*0.30);
-  const traits=p.traits||{};
-  const hasBull=!!traits.bullRush,hasSwimSpin=!!(traits.swim||traits.spin);
-  const traitMult=hasBull&&hasSwimSpin?1.10:hasBull||hasSwimSpin?1.0:0.50;
-  return Math.round(base*traitMult*10)/10;
-}
-
-// I-MVS: Interior Move Score (DL DT)
-function calcIMVS(p){
-  if(!p||p.sub!=="DT")return null;
-  const bsh=p.s?.BSH||0,str=p.s?.STR||0,pmv=p.s?.PMV||0;
-  const wgt=p.wgt||310;
-  const base=(bsh*0.40)+(str*0.30)+(pmv*0.30);
-  const wgtMult=wgt>=340?1.15:wgt>=310?1.05:wgt<300?0.85:1.0;
-  return Math.round(base*wgtMult*10)/10;
-}
-
-// TCS_V2: True Coverage Score V2 (DB)
-function calcTCSV2(p){
-  if(!p||p.pos!=="DB")return null;
-  const mcv=p.s?.MCV||0,zcv=p.s?.ZCV||0,spd=p.s?.SPD||0,prs=p.s?.PRS||0;
-  const covAvg=(mcv+zcv)/2;
-  const abs=Array.isArray(p.abilities)?p.abilities:[];
-  let apVal=0;
-  for(const a of abs){
-    const n=(a.name||"").toLowerCase();
-    const ap=typeof a.ap==="number"?a.ap:99;
-    if(ap===0&&(n.includes("deep out zone ko")||n.includes("one step ahead")))apVal=Math.max(apVal,100);
-    else if(ap<=1&&(n.includes("pick artist")||n.includes("lurk artist")))apVal=Math.max(apVal,50);
-  }
-  const base=(covAvg*0.30)+(spd*0.30)+(prs*0.15)+(apVal*0.25);
-  const dna=(p.dna||"").toLowerCase();
-  const dnaMult=dna.includes("glitchy")?1.10:dna.includes("heavy")?0.85:1.0;
-  return Math.round(base*dnaMult*10)/10;
-}
-
-// Dispatcher — get meta score for any position
-function getMetaScore(p){
-  if(!p)return null;
-  if(p.pos==="QB")return calcQMS(p);
-  if(p.pos==="HB"&&p.sub==="Elusive")return calcERBVS(p);
-  if(p.pos==="HB"&&p.sub==="Power")return calcPRBVS(p);
-  if(p.pos==="OL")return{ptbs:calcPTBS(p),rtbs:calcRTBS(p)};
-  if(p.pos==="DL"&&["LEDG","REDG"].includes(p.sub))return calcEMVS(p);
-  if(p.pos==="DL"&&p.sub==="DT")return calcIMVS(p);
-  if(p.pos==="DB")return calcTCSV2(p);
-  return null;
-}
-function getMetaNum(p){
-  const m=getMetaScore(p);
-  if(m===null)return 0;
-  if(typeof m==="number")return m;
-  if(m&&typeof m==="object"&&m.ptbs!=null)return(m.ptbs+m.rtbs)/2;
-  return 0;
-}
-
-function QMSBreakdown({p}){
-  const abs=Array.isArray(p.abilities)?p.abilities:[];
-  const rt=getRelTier(p.rel);
-  const qms=calcQMS(p);
-  let apScore=0,bestAb=null;
-  for(const a of abs){
-    const n=(a.name||"").toLowerCase();
-    const ap=typeof a.ap==="number"?a.ap:99;
-    let pts=0;
-    if((n.includes("set feet lead")||n.includes("pass lead elite"))&&ap<=1)pts=50;
-    else if(n.includes("gunslinger")&&ap===0)pts=30;
-    else if((n.includes("hot route master")||n.includes("master tactician"))&&ap<=1)pts=20;
-    if(pts>apScore){apScore=pts;bestAb=a;}
-  }
-  const spd=p.s?.SPD||0,agi=p.s?.AGI||0,thp=p.s?.THP||0;
-  const spdAdj=agi>0?((spd+agi)/2).toFixed(1):spd;
-  const apColor=apScore>=50?C.acc:apScore>=30?C.elite:apScore>0?C.blue:C.t4;
-  const qmsColor=qms>=80?C.acc:qms>=70?C.blue:qms>=60?C.warn:C.err;
-  return(<div style={{marginTop:6,padding:"7px 8px",borderRadius:5,background:C.bg3,border:`1px solid ${C.borderHi}`}}>
-    <div style={{fontSize:7,color:C.acc,fontWeight:700,fontFamily:"'Space Mono',monospace",letterSpacing:1,marginBottom:5}}>QMS V2 BREAKDOWN</div>
-    <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:3,marginBottom:4}}>
-      <div style={{padding:"4px 6px",background:C.bg4,borderRadius:3,border:`1px solid ${apColor}22`}}>
-        <div style={{fontSize:6,color:C.t3,fontFamily:"'Space Mono',monospace",marginBottom:1}}>AP SCORE ×0.50</div>
-        <div style={{fontSize:13,fontWeight:800,color:apColor,fontFamily:"'Space Mono',monospace"}}>{apScore}<span style={{fontSize:7,color:C.t4}}>/50</span></div>
-        <div style={{fontSize:6,color:C.t3,marginTop:1}}>{bestAb?`${bestAb.name} (${bestAb.ap}AP)`:"No elite abilities"}</div>
-      </div>
-      <div style={{padding:"4px 6px",background:C.bg4,borderRadius:3}}>
-        <div style={{fontSize:6,color:C.t3,fontFamily:"'Space Mono',monospace",marginBottom:1}}>SPD_ADJ ×0.20</div>
-        <div style={{fontSize:13,fontWeight:800,color:C.t1,fontFamily:"'Space Mono',monospace"}}>{spdAdj}</div>
-        <div style={{fontSize:6,color:C.t3,marginTop:1}}>({spd}+{agi})÷2</div>
-      </div>
-      <div style={{padding:"4px 6px",background:C.bg4,borderRadius:3}}>
-        <div style={{fontSize:6,color:C.t3,fontFamily:"'Space Mono',monospace",marginBottom:1}}>THP ×0.30</div>
-        <div style={{fontSize:13,fontWeight:800,color:thp>=97?C.acc:thp>=94?C.elite:C.t1,fontFamily:"'Space Mono',monospace"}}>{thp}</div>
-      </div>
-      <div style={{padding:"4px 6px",background:C.bg4,borderRadius:3,border:rt?`1px solid ${rt.color}33`:"none"}}>
-        <div style={{fontSize:6,color:C.t3,fontFamily:"'Space Mono',monospace",marginBottom:1}}>REL MULT</div>
-        <div style={{fontSize:13,fontWeight:800,color:rt?rt.color:C.t4,fontFamily:"'Space Mono',monospace"}}>{rt?`×${rt.mult}`:"×1.00"}</div>
-        <div style={{fontSize:6,color:rt?rt.color:C.t4,marginTop:1}}>{rt?`${rt.label} · ${p.rel}`:"no release data"}</div>
-      </div>
-    </div>
-    <div style={{padding:"5px 8px",borderRadius:3,background:qms>0?`${qmsColor}18`:C.bg4,border:`1px solid ${qms>0?qmsColor+"44":C.border}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-      <span style={{fontSize:7,fontWeight:700,color:C.t2,fontFamily:"'Space Mono',monospace",letterSpacing:1}}>FINAL QMS SCORE</span>
-      <span style={{fontSize:18,fontWeight:900,color:qms>0?qmsColor:C.t4,fontFamily:"'Space Mono',monospace"}}>{qms>0?qms:"—"}</span>
-    </div>
-  </div>);
-}
-
-function ScoreBreakdown({p,pos,sub}){
-  const mono="'Space Mono',monospace";
-  const cell=(label,val,extra)=>(<div style={{padding:"4px 6px",background:C.bg4,borderRadius:3}}>
-    <div style={{fontSize:6,color:C.t3,fontFamily:mono,marginBottom:1}}>{label}</div>
-    <div style={{fontSize:13,fontWeight:800,color:val>=95?C.acc:val>=85?C.elite:C.t1,fontFamily:mono}}>{typeof val==="number"?val.toFixed(1):val}</div>
-    {extra&&<div style={{fontSize:6,color:C.t3,marginTop:1}}>{extra}</div>}
-  </div>);
-
-  if(p.pos==="HB"&&p.sub==="Elusive"){
-    const spd=p.s?.SPD||0,cod=p.s?.COD||0,rec=p.s?.REC||0,elu=p.s?.ELU||0,acc=p.s?.ACC||0;
-    const accM=acc>=97?1.05:1.0;const score=calcERBVS(p);const sc=score>=90?C.acc:score>=80?C.blue:C.warn;
-    return(<div style={{marginTop:6,padding:"7px 8px",borderRadius:5,background:C.bg3,border:`1px solid ${C.borderHi}`}}>
-      <div style={{fontSize:7,color:C.acc,fontWeight:700,fontFamily:mono,letterSpacing:1,marginBottom:5}}>E-RBVS BREAKDOWN</div>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:3,marginBottom:4}}>
-        {cell(`SPD ×0.35`,spd)}{cell(`COD ×0.30`,cod)}{cell(`REC ×0.20`,rec)}{cell(`ELU ×0.15`,elu)}
-      </div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:3}}>
-        <div style={{padding:"4px 6px",background:C.bg4,borderRadius:3,border:`1px solid ${accM>1?C.acc+"33":"transparent"}`}}>
-          <div style={{fontSize:6,color:C.t3,fontFamily:mono}}>ACC MULT</div>
-          <div style={{fontSize:13,fontWeight:800,color:accM>1?C.acc:C.t1,fontFamily:mono}}>×{accM.toFixed(2)}</div>
-          <div style={{fontSize:6,color:C.t3}}>ACC {acc} {accM>1?"≥97 bonus":""}</div>
-        </div>
-        <div style={{padding:"5px 8px",borderRadius:3,background:`${sc}18`,border:`1px solid ${sc}44`,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
-          <div style={{fontSize:7,fontWeight:700,color:C.t2,fontFamily:mono}}>E-RBVS</div>
-          <div style={{fontSize:18,fontWeight:900,color:sc,fontFamily:mono}}>{score||"—"}</div>
-        </div>
-      </div>
-    </div>);
-  }
-
-  if(p.pos==="HB"&&p.sub==="Power"){
-    const btk=p.s?.BTK||0,spd=p.s?.SPD||0,sfa=p.s?.SFA||0,trk=p.s?.TRK||0,wgt=p.wgt||220;
-    const wM=wgt>=245?1.15:wgt>=230?1.10:wgt<225?0.85:1.0;const score=calcPRBVS(p);const sc=score>=90?C.acc:score>=80?C.blue:C.warn;
-    return(<div style={{marginTop:6,padding:"7px 8px",borderRadius:5,background:C.bg3,border:`1px solid ${C.borderHi}`}}>
-      <div style={{fontSize:7,color:C.acc,fontWeight:700,fontFamily:mono,letterSpacing:1,marginBottom:5}}>P-RBVS BREAKDOWN</div>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:3,marginBottom:4}}>
-        {cell(`BTK ×0.30`,btk)}{cell(`SPD ×0.25`,spd)}{cell(`SFA ×0.25`,sfa)}{cell(`TRK ×0.20`,trk)}
-      </div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:3}}>
-        <div style={{padding:"4px 6px",background:C.bg4,borderRadius:3,border:`1px solid ${wM!==1?C.acc+"33":"transparent"}`}}>
-          <div style={{fontSize:6,color:C.t3,fontFamily:mono}}>WGT MULT</div>
-          <div style={{fontSize:13,fontWeight:800,color:wM>=1.1?C.acc:wM<1?C.err:C.t1,fontFamily:mono}}>×{wM.toFixed(2)}</div>
-          <div style={{fontSize:6,color:C.t3}}>{wgt} lbs</div>
-        </div>
-        <div style={{padding:"5px 8px",borderRadius:3,background:`${sc}18`,border:`1px solid ${sc}44`,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
-          <div style={{fontSize:7,fontWeight:700,color:C.t2,fontFamily:mono}}>P-RBVS</div>
-          <div style={{fontSize:18,fontWeight:900,color:sc,fontFamily:mono}}>{score||"—"}</div>
-        </div>
-      </div>
-    </div>);
-  }
-
-  if(p.pos==="OL"){
-    const pbk=p.s?.PBK||0,rbk=p.s?.RBK||0,awr=p.s?.AWR||0,str=p.s?.STR||0,ibl=p.s?.IBL||0,spd=p.s?.SPD||0,wgt=p.wgt||300;
-    const ptbs=calcPTBS(p),rtbs=calcRTBS(p);
-    const wM=wgt>=330?1.15:wgt>=300?1.0:0.80;const isInt=["LG","C","RG"].includes(p.sub);const sM=isInt&&spd<75?0.90:1.0;
-    const psc=ptbs>=90?C.acc:ptbs>=80?C.blue:C.warn;const rsc=rtbs>=90?C.acc:rtbs>=80?C.blue:C.warn;
-    return(<div style={{marginTop:6,padding:"7px 8px",borderRadius:5,background:C.bg3,border:`1px solid ${C.borderHi}`}}>
-      <div style={{fontSize:7,color:C.acc,fontWeight:700,fontFamily:mono,letterSpacing:1,marginBottom:5}}>OL DUAL BLOCKING BREAKDOWN</div>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:3,marginBottom:4}}>
-        {cell(`PBK`,pbk)}{cell(`RBK`,rbk)}{cell(`AWR`,awr)}{cell(`STR`,str)}{cell(`IBL`,ibl)}{cell(`SPD`,spd)}
-      </div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:3,marginBottom:3}}>
-        <div style={{padding:"4px 6px",background:C.bg4,borderRadius:3}}>
-          <div style={{fontSize:6,color:C.t3,fontFamily:mono}}>WGT MULT (Pass)</div>
-          <div style={{fontSize:11,fontWeight:800,color:wM>=1.1?C.acc:wM<1?C.err:C.t1,fontFamily:mono}}>×{wM.toFixed(2)} <span style={{fontSize:7,color:C.t3}}>{wgt}lbs</span></div>
-        </div>
-        <div style={{padding:"4px 6px",background:C.bg4,borderRadius:3}}>
-          <div style={{fontSize:6,color:C.t3,fontFamily:mono}}>SPD ADJ (Run)</div>
-          <div style={{fontSize:11,fontWeight:800,color:sM<1?C.err:C.t1,fontFamily:mono}}>×{sM.toFixed(2)} <span style={{fontSize:7,color:C.t3}}>{isInt?"G/C":"Tackle"}</span></div>
-        </div>
-      </div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:3}}>
-        <div style={{padding:"5px 8px",borderRadius:3,background:`${psc}18`,border:`1px solid ${psc}44`,textAlign:"center"}}>
-          <div style={{fontSize:7,fontWeight:700,color:C.t2,fontFamily:mono}}>P-TBS</div>
-          <div style={{fontSize:16,fontWeight:900,color:psc,fontFamily:mono}}>{ptbs||"—"}</div>
-        </div>
-        <div style={{padding:"5px 8px",borderRadius:3,background:`${rsc}18`,border:`1px solid ${rsc}44`,textAlign:"center"}}>
-          <div style={{fontSize:7,fontWeight:700,color:C.t2,fontFamily:mono}}>R-TBS</div>
-          <div style={{fontSize:16,fontWeight:900,color:rsc,fontFamily:mono}}>{rtbs||"—"}</div>
-        </div>
-      </div>
-    </div>);
-  }
-
-  if(p.pos==="DL"&&["LEDG","REDG"].includes(p.sub)){
-    const pmv=p.s?.PMV||0,fmv=p.s?.FMV||0,acc=p.s?.ACC||0,spd=p.s?.SPD||0;
-    const bestRush=Math.max(pmv,fmv);const traits=p.traits||{};
-    const hasBull=!!traits.bullRush,hasSS=!!(traits.swim||traits.spin);
-    const tM=hasBull&&hasSS?1.10:hasBull||hasSS?1.0:0.50;
-    const score=calcEMVS(p);const sc=score>=90?C.acc:score>=80?C.blue:C.warn;
-    return(<div style={{marginTop:6,padding:"7px 8px",borderRadius:5,background:C.bg3,border:`1px solid ${C.borderHi}`}}>
-      <div style={{fontSize:7,color:C.acc,fontWeight:700,fontFamily:mono,letterSpacing:1,marginBottom:5}}>E-MVS BREAKDOWN</div>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:3,marginBottom:4}}>
-        {cell(`BEST RUSH ×0.40`,bestRush,`PMV ${pmv} / FMV ${fmv}`)}{cell(`ACC ×0.30`,acc)}{cell(`SPD ×0.30`,spd)}
-        <div style={{padding:"4px 6px",background:C.bg4,borderRadius:3,border:`1px solid ${tM>=1.1?C.acc+"33":tM<1?C.err+"33":"transparent"}`}}>
-          <div style={{fontSize:6,color:C.t3,fontFamily:mono}}>TRAIT GATE</div>
-          <div style={{fontSize:13,fontWeight:800,color:tM>=1.1?C.acc:tM<1?C.err:C.t1,fontFamily:mono}}>×{tM.toFixed(2)}</div>
-          <div style={{fontSize:6,color:C.t3}}>{hasBull?"Bull✓":"Bull✕"} {hasSS?"Swim/Spin✓":"Swim/Spin✕"}</div>
-        </div>
-      </div>
-      <div style={{padding:"5px 8px",borderRadius:3,background:`${sc}18`,border:`1px solid ${sc}44`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-        <span style={{fontSize:7,fontWeight:700,color:C.t2,fontFamily:mono}}>E-MVS</span>
-        <span style={{fontSize:18,fontWeight:900,color:sc,fontFamily:mono}}>{score||"—"}</span>
-      </div>
-    </div>);
-  }
-
-  if(p.pos==="DL"&&p.sub==="DT"){
-    const bsh=p.s?.BSH||0,str=p.s?.STR||0,pmv=p.s?.PMV||0,wgt=p.wgt||310;
-    const wM=wgt>=340?1.15:wgt>=310?1.05:wgt<300?0.85:1.0;
-    const score=calcIMVS(p);const sc=score>=90?C.acc:score>=80?C.blue:C.warn;
-    return(<div style={{marginTop:6,padding:"7px 8px",borderRadius:5,background:C.bg3,border:`1px solid ${C.borderHi}`}}>
-      <div style={{fontSize:7,color:C.acc,fontWeight:700,fontFamily:mono,letterSpacing:1,marginBottom:5}}>I-MVS BREAKDOWN</div>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:3,marginBottom:4}}>
-        {cell(`BSH ×0.40`,bsh)}{cell(`STR ×0.30`,str)}{cell(`PMV ×0.30`,pmv)}
-        <div style={{padding:"4px 6px",background:C.bg4,borderRadius:3,border:`1px solid ${wM!==1?C.acc+"33":"transparent"}`}}>
-          <div style={{fontSize:6,color:C.t3,fontFamily:mono}}>WGT MULT</div>
-          <div style={{fontSize:13,fontWeight:800,color:wM>=1.1?C.acc:wM<1?C.err:C.t1,fontFamily:mono}}>×{wM.toFixed(2)}</div>
-          <div style={{fontSize:6,color:C.t3}}>{wgt} lbs</div>
-        </div>
-      </div>
-      <div style={{padding:"5px 8px",borderRadius:3,background:`${sc}18`,border:`1px solid ${sc}44`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-        <span style={{fontSize:7,fontWeight:700,color:C.t2,fontFamily:mono}}>I-MVS</span>
-        <span style={{fontSize:18,fontWeight:900,color:sc,fontFamily:mono}}>{score||"—"}</span>
-      </div>
-    </div>);
-  }
-
-  if(p.pos==="DB"){
-    const mcv=p.s?.MCV||0,zcv=p.s?.ZCV||0,spd=p.s?.SPD||0,prs=p.s?.PRS||0;
-    const covAvg=((mcv+zcv)/2).toFixed(1);
-    const abs=Array.isArray(p.abilities)?p.abilities:[];
-    let apVal=0,bestAb=null;
-    for(const a of abs){const n=(a.name||"").toLowerCase();const ap=typeof a.ap==="number"?a.ap:99;
-      if(ap===0&&(n.includes("deep out zone ko")||n.includes("one step ahead"))){if(100>apVal){apVal=100;bestAb=a;}}
-      else if(ap<=1&&(n.includes("pick artist")||n.includes("lurk artist"))){if(50>apVal){apVal=50;bestAb=a;}}
-    }
-    const dna=(p.dna||"").toLowerCase();const dM=dna.includes("glitchy")?1.10:dna.includes("heavy")?0.85:1.0;
-    const score=calcTCSV2(p);const sc=score>=90?C.acc:score>=80?C.blue:C.warn;
-    return(<div style={{marginTop:6,padding:"7px 8px",borderRadius:5,background:C.bg3,border:`1px solid ${C.borderHi}`}}>
-      <div style={{fontSize:7,color:C.acc,fontWeight:700,fontFamily:mono,letterSpacing:1,marginBottom:5}}>TCS V2 BREAKDOWN</div>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:3,marginBottom:4}}>
-        {cell(`COV_AVG ×0.30`,parseFloat(covAvg),`MCV ${mcv} + ZCV ${zcv}`)}
-        {cell(`SPD ×0.30`,spd)}{cell(`PRS ×0.15`,prs)}
-        <div style={{padding:"4px 6px",background:C.bg4,borderRadius:3,border:`1px solid ${apVal>0?C.acc+"33":"transparent"}`}}>
-          <div style={{fontSize:6,color:C.t3,fontFamily:mono}}>AP VALUE ×0.25</div>
-          <div style={{fontSize:13,fontWeight:800,color:apVal>=100?C.acc:apVal>0?C.blue:C.t4,fontFamily:mono}}>{apVal}</div>
-          <div style={{fontSize:6,color:C.t3}}>{bestAb?`${bestAb.name} (${bestAb.ap}AP)`:"No key abilities"}</div>
-        </div>
-      </div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:3}}>
-        <div style={{padding:"4px 6px",background:C.bg4,borderRadius:3,border:`1px solid ${dM!==1?(dM>1?C.acc:C.err)+"33":"transparent"}`}}>
-          <div style={{fontSize:6,color:C.t3,fontFamily:mono}}>DNA MULT</div>
-          <div style={{fontSize:13,fontWeight:800,color:dM>1?C.acc:dM<1?C.err:C.t1,fontFamily:mono}}>×{dM.toFixed(2)}</div>
-          <div style={{fontSize:6,color:C.t3}}>{p.dna||"Standard"}</div>
-        </div>
-        <div style={{padding:"5px 8px",borderRadius:3,background:`${sc}18`,border:`1px solid ${sc}44`,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
-          <div style={{fontSize:7,fontWeight:700,color:C.t2,fontFamily:mono}}>TCS V2</div>
-          <div style={{fontSize:18,fontWeight:900,color:sc,fontFamily:mono}}>{score||"—"}</div>
-        </div>
-      </div>
-    </div>);
-  }
-
-  return null;
-}
-
-function AN({value,d=1}){const[v,setV]=useState(0);const r=useRef(null);useEffect(()=>{const t0=performance.now();const go=n=>{const p=Math.min((n-t0)/800,1);setV((1-Math.pow(1-p,3))*value);if(p<1)r.current=requestAnimationFrame(go);};r.current=requestAnimationFrame(go);return()=>cancelAnimationFrame(r.current);},[value]);return <span>{v.toFixed(d)}</span>;}
-
-function Gauge({ovr,sz=54}){
-  const gc=ovr>=97?C.acc:ovr>=95?C.elite:ovr>=93?C.blue:C.warn;
-  const ci=2*Math.PI*24,off=ci*(1-Math.min(ovr/100,1));
-  return(<div style={{position:"relative",width:sz,height:sz,flexShrink:0}}>
-    <svg width={sz} height={sz} viewBox="0 0 60 60"><circle cx="30" cy="30" r="24" fill="none" stroke={C.border} strokeWidth="3.5"/><circle cx="30" cy="30" r="24" fill="none" stroke={gc} strokeWidth="3.5" strokeLinecap="round" strokeDasharray={ci} strokeDashoffset={off} transform="rotate(-90 30 30)" style={{transition:"stroke-dashoffset .8s cubic-bezier(.4,0,.2,1)"}}/></svg>
-    <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center"}}><span style={{fontSize:sz*.28,fontWeight:800,color:C.t1,fontFamily:"'Space Mono',monospace"}}><AN value={ovr} d={0}/></span></div>
-  </div>);
-}
-
-function SB({label,val,thresh}){
-  const met=thresh?val>=thresh:true;const bg=thresh?(met?C.accDim:C.errDim):C.bg4;
-  const cl=thresh?(met?C.acc:C.err):(val>=95?C.acc:val>=90?C.elite:C.t1);
-  return(<div style={{background:bg,borderRadius:5,padding:"4px 5px",textAlign:"center",minWidth:0}}>
-    <div style={{fontSize:7,color:C.t3,fontFamily:"'Space Mono',monospace"}}>{label}</div>
-    <div style={{fontSize:14,fontWeight:800,color:cl,fontFamily:"'Space Mono',monospace"}}>{val}</div>
-    {thresh&&<div style={{fontSize:6,color:met?C.acc:C.err,fontFamily:"'Space Mono',monospace"}}>{met?`✓≥${thresh}`:`✕${thresh}`}</div>}
-  </div>);
-}
-
-function Card({p,pos,sub}){
-  const[o,setO]=useState(false);
-  const stats=gS(pos,sub||p.sub);
-  const tm={SAC:85,MAC:90,DAC:95,ZCV:90,MCV:90,PRS:90,SRR:90,MRR:90,DRR:90,COD:90};
-  return(<div onClick={()=>setO(!o)} style={{background:C.bg2,border:`1px solid ${o?C.acc+"44":C.border}`,borderRadius:9,padding:"10px 12px",cursor:"pointer",transition:"all .2s",marginBottom:5,boxShadow:o?`0 0 14px ${C.acc}10`:"none"}}>
-    <div style={{display:"flex",alignItems:"center",gap:8}}>
-      <Gauge ovr={p.ovr}/>
-      <div style={{flex:1,minWidth:0}}>
-        <div style={{display:"flex",alignItems:"center",gap:4,flexWrap:"wrap"}}>
-          <span style={{fontSize:13,fontWeight:700,color:C.t1}}>{p.name}</span>
-          <span style={{fontSize:7,color:C.t2,background:C.bg4,padding:"1px 4px",borderRadius:3,fontFamily:"'Space Mono',monospace"}}>{p.arch||p.sub}</span>
-          {pos==="QB"&&getRelTier(p.rel)&&getRelTier(p.rel).tier!=="?"&&(()=>{const rt=getRelTier(p.rel);return<span style={{fontSize:7,color:rt.color,background:`${rt.color}18`,padding:"1px 4px",borderRadius:3,fontFamily:"'Space Mono',monospace",border:`1px solid ${rt.color}33`}}>{rt.label}</span>;})()}
-          {p.ttB&&<span style={{fontSize:7,color:C.blue,background:C.blueDim,padding:"1px 4px",borderRadius:3,fontFamily:"'Space Mono',monospace"}}>TT+2</span>}
-        </div>
-        <div style={{fontSize:9,color:C.t3,marginTop:1}}>{p.card} · {p.ovr} OVR</div>
-        <div style={{display:"flex",alignItems:"center",gap:8,marginTop:2,flexWrap:"wrap"}}>
-          <span style={{display:"flex",alignItems:"center",gap:3}}>
-            <span style={{fontSize:11,fontWeight:700,color:C.acc,fontFamily:"'Space Mono',monospace"}}>▲ {p.start}%</span>
-            <span style={{fontSize:7,color:C.t3}}>starting</span>
-          </span>
-          {(()=>{const mn=getMetaNum(p);if(!mn||mn<=0)return null;const sc=mn>=90?C.acc:mn>=80?C.blue:mn>=70?C.warn:C.err;const eng=getEng(p.pos,p.sub);const lbl=p.pos==="QB"?"QMS":p.pos==="OL"?"TBS":p.pos==="DL"?(["LEDG","REDG"].includes(p.sub)?"E-MVS":"I-MVS"):p.pos==="DB"?"TCS":p.sub==="Elusive"?"E-RBVS":"P-RBVS";return<span style={{display:"flex",alignItems:"center",gap:2,padding:"1px 5px",borderRadius:3,background:`${sc}18`,border:`1px solid ${sc}33`}}><span style={{fontSize:7,color:sc,fontFamily:"'Space Mono',monospace",fontWeight:700}}>{lbl}</span><span style={{fontSize:10,fontWeight:800,color:sc,fontFamily:"'Space Mono',monospace"}}>{mn.toFixed(1)}</span></span>;})()}
-          {fPrice(p.price)&&<span style={{display:"flex",alignItems:"center",gap:2,padding:"1px 5px",borderRadius:3,background:C.warnDim,border:`1px solid ${C.warn}33`}}>
-            <span style={{fontSize:9,color:C.coin}}>🪙</span>
-            <span style={{fontSize:9,fontWeight:700,color:C.warn,fontFamily:"'Space Mono',monospace"}}>{fPrice(p.price)}</span>
-          </span>}
-        </div>
-      </div>
-      <div style={{fontSize:8,color:C.t4,transform:o?"rotate(180deg)":"",transition:"transform .2s"}}>▼</div>
-    </div>
-    {o&&<div style={{marginTop:8,paddingTop:8,borderTop:`1px solid ${C.border}`,animation:"fadeIn .3s ease"}}>
-      {pos==="QB"?<QMSBreakdown p={p}/>:<ScoreBreakdown p={p} pos={pos} sub={sub}/>}
-      <div style={{display:"grid",gridTemplateColumns:`repeat(${Math.min(stats.length,5)},1fr)`,gap:4,marginTop:6}}>
-        {stats.map(k=>p.s[k]!=null?<SB key={k} label={k} val={p.s[k]} thresh={tm[k]}/>:null)}
-      </div>
-    </div>}
-  </div>);
-}
-
-function Bars({pl}){
-  const mx=Math.max(...pl.map(p=>p.start),1);
-  return(<div style={{padding:"10px 12px",borderRadius:7,background:C.bg2,border:`1px solid ${C.border}`,marginTop:7}}>
-    <div style={{fontSize:8,fontWeight:700,color:C.t3,fontFamily:"'Space Mono',monospace",letterSpacing:1,marginBottom:6}}>COMMUNITY STARTING %</div>
-    {pl.map((p,i)=>(<div key={i} style={{marginBottom:i<pl.length-1?7:0}}>
-      <div style={{display:"flex",justifyContent:"space-between",marginBottom:1}}>
-        <span style={{fontSize:9,fontWeight:600,color:C.t1}}>{p.name}</span>
-        <span style={{fontSize:9,fontWeight:700,fontFamily:"'Space Mono',monospace",color:C.acc}}>{p.start}%</span>
-      </div>
-      <div style={{height:8,borderRadius:3,background:C.bg4,overflow:"hidden"}}>
-        <div style={{height:"100%",width:`${(p.start/mx)*100}%`,background:`linear-gradient(90deg,${C.acc},${C.elite})`,borderRadius:3,transition:"width .8s ease"}}/>
-      </div>
-    </div>))}
-  </div>);
-}
-
-// EA auction house takes a 10% tax on every sale
 const AH_TAX=0.10;
 
-function SnipePanel({players,search,listed,setListed,mvOv,setMvOv,profitMin,setProfitMin,discountMin,setDiscountMin,matchMode,setMatchMode}){
+function SnipePanel({players,search,listed,setListed,mvOv,setMvOv,profitMin,setProfitMin,discountMin,setDiscountMin,matchMode,setMatchMode,platform="ps5"}){
   const mono="'Space Mono',monospace";
   const inp={background:C.bg,border:`1px solid ${C.border}`,borderRadius:4,color:C.t1,fontSize:10,fontFamily:mono,outline:"none",padding:"4px 6px",width:"100%"};
   const setL=(k,v)=>setListed(p=>({...p,[k]:v}));
@@ -626,7 +159,31 @@ function SnipePanel({players,search,listed,setListed,mvOv,setMvOv,profitMin,setP
   const[arrPath,setArrPath]=useLS("mut.feed.arrPath",""),[nameKey,setNameKey]=useLS("mut.feed.nameKey",""),[priceKey,setPriceKey]=useLS("mut.feed.priceKey","");
   const[listings,setListings]=useState([]),[feedStat,setFeedStat]=useState(null);
   const[soundOn,setSoundOn]=useLS("mut.feed.sound",true);
+  const[notifyOn,setNotifyOn]=useLS("mut.feed.notify",false);
+  const[feedAck,setFeedAck]=useLS("mut.feed.ack",false);
+  const[guideOpen,setGuideOpen]=useState(false);
+  const[notifyPerm,setNotifyPerm]=useState(typeof Notification!=="undefined"?Notification.permission:"unsupported");
+  const[scanRes,setScanRes]=useState(null),[scanning,setScanning]=useState(false);
   const prevSnipes=useRef(new Set());
+
+  // On-demand server-side scan: one read-only fetch + server margin math.
+  async function doScan(){
+    if(scanning||!feedUrl)return;setScanning(true);setScanRes(null);
+    const marketValues={};players.forEach(p=>{const k=`${p.name}__${p.card}__${p.pos}__${p.sub}`;const v=parseCoins(mvOv[k])||p.price||0;if(v>0)marketValues[p.name]=v;});
+    try{
+      const r=await fetch("/api/snipe-scan",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
+        feed:{endpoint:feedUrl,method:feedBody.trim()?"POST":"GET",token:feedTok,body:feedBody.trim()||undefined,arrPath,nameKey,priceKey},
+        platform,marketValues,profitMin,discountMin,matchMode})});
+      const j=await r.json();setScanRes(j);if(j.ok&&j.summary?.snipes&&soundOn)beep();
+    }catch(e){setScanRes({ok:false,error:e.message});}
+    setScanning(false);
+  }
+
+  // Request desktop-notification permission (user-gesture from the 🛎 button)
+  const askNotify=()=>{
+    if(typeof Notification==="undefined"){setNotifyPerm("unsupported");return;}
+    Notification.requestPermission().then(p=>setNotifyPerm(p)).catch(()=>{});
+  };
 
   useEffect(()=>{
     if(!feedOn||!feedUrl)return;
@@ -650,10 +207,16 @@ function SnipePanel({players,search,listed,setListed,mvOv,setMvOv,profitMin,setP
     return()=>{alive=false;clearInterval(id);};
   },[feedOn,feedUrl,feedTok,feedBody,feedSecs,arrPath,nameKey,priceKey]);
 
+  // Precompute normalized roster names once per roster change for matching.
+  const normRoster=useMemo(()=>players.map(p=>({p,nn:normName(p.name)})),[players]);
   const feedRows=useMemo(()=>{
     return listings.map(l=>{
-      const nm=(l.name||"").toLowerCase();
-      const mp=players.find(p=>p.name.toLowerCase()===nm)||players.find(p=>nm&&nm.includes(p.name.toLowerCase()));
+      const nn=normName(l.name);
+      // 1) exact normalized equality, then 2) normalized substring/startsWith fallback
+      const mp=(nn&&(
+        normRoster.find(x=>x.nn===nn)||
+        normRoster.find(x=>x.nn&&x.nn.length>=5&&nn.length>=5&&(nn.startsWith(x.nn)||x.nn.startsWith(nn)||nn.includes(x.nn)))
+      ))?.p||null;
       const key=mp?`${mp.name}__${mp.card}__${mp.pos}__${mp.sub}`:null;
       const mv=mp?(parseCoins(mvOv[key])||mp.price||0):0;
       const has=mv>0&&l.buyNow>0;
@@ -661,17 +224,31 @@ function SnipePanel({players,search,listed,setListed,mvOv,setMvOv,profitMin,setP
       const disc=has?Math.round((mv-l.buyNow)/mv*100):null;
       const profitOk=profit!=null&&profit>=profitMin,discOk=disc!=null&&disc>=discountMin;
       const isSnipe=has&&(matchMode==="all"?(profitOk&&discOk):(profitOk||discOk));
-      return{l,mp,mv,profit,disc,isSnipe};
+      const heat=isSnipe?heatScore(profit,disc,mv):0;
+      return{l,mp,mv,profit,disc,isSnipe,heat};
     }).sort((a,b)=>{if(a.isSnipe!==b.isSnipe)return a.isSnipe?-1:1;return (b.profit??-1e12)-(a.profit??-1e12);});
-  },[listings,players,mvOv,profitMin,discountMin,matchMode]);
+  },[listings,normRoster,mvOv,profitMin,discountMin,matchMode]);
   const feedSnipes=feedRows.filter(r=>r.isSnipe).length;
 
-  // Beep once when a snipe signature appears that wasn't in the previous poll
+  // Beep / desktop-notify once per snipe signature that wasn't in the previous poll
   useEffect(()=>{
-    const cur=new Set(feedRows.filter(r=>r.isSnipe).map(r=>`${r.l.name}@${r.l.buyNow}`));
-    if(feedOn){let fresh=false;cur.forEach(s=>{if(!prevSnipes.current.has(s))fresh=true;});if(fresh&&soundOn)beep();}
+    const snipes=feedRows.filter(r=>r.isSnipe);
+    const cur=new Set(snipes.map(r=>`${r.l.name}@${r.l.buyNow}`));
+    if(feedOn){
+      const freshRows=snipes.filter(r=>!prevSnipes.current.has(`${r.l.name}@${r.l.buyNow}`));
+      if(freshRows.length){
+        if(soundOn)beep();
+        if(notifyOn&&notifyPerm==="granted"&&typeof Notification!=="undefined"){
+          // one notification per fresh snipe signature (throttled by the signature set)
+          freshRows.forEach(r=>{try{new Notification("🎯 Panda Actual Sniper snipe",{
+            body:`${r.l.name} @ ${fPrice(r.l.buyNow)||r.l.buyNow} · ${fSigned(r.profit)} (${r.disc}%) · heat ${r.heat}`,
+            tag:`${r.l.name}@${r.l.buyNow}`,
+          });}catch{}});
+        }
+      }
+    }
     prevSnipes.current=cur;
-  },[feedRows,feedOn,soundOn]);
+  },[feedRows,feedOn,soundOn,notifyOn,notifyPerm]);
 
   const fld=(label,val,setter,ph,type)=>(<label style={{display:"block",minWidth:0}}>
     <div style={{fontSize:6,color:C.t3,fontFamily:mono,letterSpacing:1,marginBottom:2}}>{label}</div>
@@ -693,7 +270,8 @@ function SnipePanel({players,search,listed,setListed,mvOv,setMvOv,profitMin,setP
         const profitOk=profit!=null&&profit>=profitMin;
         const discOk=disc!=null&&disc>=discountMin;
         const isSnipe=hasDeal&&(matchMode==="all"?(profitOk&&discOk):(profitOk||discOk));
-        return{p,key,mv,lp,hasDeal,profit,disc,profitOk,discOk,isSnipe};
+        const heat=isSnipe?heatScore(profit,disc,mv):0;
+        return{p,key,mv,lp,hasDeal,profit,disc,profitOk,discOk,isSnipe,heat};
       })
       .sort((a,b)=>{
         if(a.isSnipe!==b.isSnipe)return a.isSnipe?-1:1;
@@ -743,6 +321,25 @@ function SnipePanel({players,search,listed,setListed,mvOv,setMvOv,profitMin,setP
         <div style={{fontSize:7,color:C.t3,fontFamily:mono,lineHeight:1.5,marginBottom:7,padding:"5px 7px",background:C.bg3,borderRadius:4,border:`1px solid ${C.border}`}}>
           Capture an auction <b style={{color:C.t2}}>search</b> request from the Madden Companion App (mitmproxy/Charles), then paste the endpoint, your session token, and the JSON paths to map the response. Buy/bid/sell is blocked at the proxy — this only reads &amp; displays.
         </div>
+
+        {/* token-capture wizard */}
+        <div style={{marginBottom:7,borderRadius:4,border:`1px solid ${C.border}`,overflow:"hidden"}}>
+          <button onClick={()=>setGuideOpen(o=>!o)} style={{width:"100%",display:"flex",alignItems:"center",gap:6,padding:"6px 8px",background:C.bg3,border:"none",cursor:"pointer",textAlign:"left"}}>
+            <span style={{fontSize:8,fontWeight:700,color:C.blue,fontFamily:mono,letterSpacing:1}}>📥 HOW TO CAPTURE YOUR FEED</span>
+            <div style={{flex:1}}/>
+            <span style={{fontSize:7,color:C.t4,transform:guideOpen?"rotate(180deg)":"",display:"inline-block",transition:"transform .2s"}}>▼</span>
+          </button>
+          {guideOpen&&<ol style={{margin:0,padding:"7px 8px 8px 22px",fontSize:7.5,color:C.t2,fontFamily:mono,lineHeight:1.7,animation:"fadeIn .2s"}}>
+            <li>Install the <b style={{color:C.t1}}>Madden NFL Companion</b> app on your phone and sign in to your EA account.</li>
+            <li>On your computer install an HTTPS-intercepting proxy — <b style={{color:C.t1}}>mitmproxy</b> (free) or <b style={{color:C.t1}}>Charles</b> / Fiddler.</li>
+            <li>Set the phone's Wi-Fi proxy to your computer, then open the proxy's CA cert URL on the phone and trust it so HTTPS can be decrypted.</li>
+            <li>In Companion, open the Auction House and run a normal <b style={{color:C.t1}}>search</b>. Watch the proxy for the request that returns the listings JSON.</li>
+            <li>Copy the request's <b style={{color:C.t1}}>endpoint URL</b> (the search one) into <span style={{color:C.acc}}>ENDPOINT URL</span> below.</li>
+            <li>Copy the <b style={{color:C.t1}}>auth header value</b> (Authorization / X-BLAZE-SESSION / X-Pin) into <span style={{color:C.acc}}>AUTH HEADER VALUE</span>.</li>
+            <li>Inspect the JSON: set <span style={{color:C.acc}}>LISTINGS ARRAY PATH</span> to the array (e.g. <code style={{color:C.t1}}>data.auctionInfo</code>), and <span style={{color:C.acc}}>NAME KEY</span> / <span style={{color:C.acc}}>BUY-NOW KEY</span> to the per-item dotted paths (e.g. <code style={{color:C.t1}}>itemData.fullName</code>, <code style={{color:C.t1}}>buyNowPrice</code>).</li>
+            <li>If the request was a POST, paste its JSON into <span style={{color:C.acc}}>REQUEST BODY JSON</span>; otherwise leave it blank for a GET.</li>
+          </ol>}
+        </div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:6}}>
           {fld("ENDPOINT URL (search)",feedUrl,setFeedUrl,"https://...search")}
           {fld("AUTH HEADER VALUE",feedTok,setFeedTok,"Bearer ... / X-Pin token","password")}
@@ -755,20 +352,47 @@ function SnipePanel({players,search,listed,setListed,mvOv,setMvOv,profitMin,setP
           <div style={{fontSize:6,color:C.t3,fontFamily:mono,letterSpacing:1,marginBottom:2}}>REQUEST BODY JSON (optional — leave blank for GET)</div>
           <textarea value={feedBody} onChange={e=>setFeedBody(e.target.value)} placeholder='{"sort":"...","filter":...}' rows={2} style={{...inp,fontSize:9,padding:"4px 6px",resize:"vertical"}}/>
         </label>
+        {/* ToS acknowledgement gate — required before the feed can start */}
+        <label style={{display:"flex",gap:7,alignItems:"flex-start",marginBottom:7,padding:"7px 8px",borderRadius:5,background:C.errDim,border:`1px solid ${C.err}66`,cursor:"pointer"}}>
+          <input type="checkbox" checked={feedAck} onChange={e=>setFeedAck(e.target.checked)} style={{marginTop:1,accentColor:C.err,cursor:"pointer",flexShrink:0}}/>
+          <span style={{fontSize:7.5,color:C.warn,fontFamily:mono,lineHeight:1.6}}>
+            <b style={{color:C.err}}>⚠ I understand</b> this live feed uses <b style={{color:C.t1}}>my own captured EA session token</b>, that intercepting Companion traffic <b style={{color:C.t1}}>violates EA's User Agreement</b>, and that it <b style={{color:C.err}}>risks a permanent account ban</b> even though this tool is read-only. I accept that risk on an account I'm willing to lose.
+          </span>
+        </label>
         <div style={{display:"flex",gap:6}}>
-          <button onClick={()=>setFeedOn(v=>!v)} disabled={!feedUrl} style={{flex:1,padding:"6px",borderRadius:5,border:`1px solid ${feedOn?C.err+"66":C.acc+"66"}`,background:feedOn?C.errDim:C.accDim,color:feedOn?C.err:C.acc,fontSize:9,fontWeight:800,fontFamily:mono,letterSpacing:1,cursor:feedUrl?"pointer":"not-allowed",opacity:feedUrl?1:.5}}>{feedOn?"■ STOP POLLING":"▶ START LIVE FEED"}</button>
+          <button onClick={()=>setFeedOn(v=>!v)} disabled={!feedOn&&!(feedUrl&&feedAck)} title={!feedUrl?"Enter a feed endpoint URL first":!feedAck?"Tick the acknowledgement to enable the feed":""} style={{flex:1,padding:"6px",borderRadius:5,border:`1px solid ${feedOn?C.err+"66":C.acc+"66"}`,background:feedOn?C.errDim:C.accDim,color:feedOn?C.err:C.acc,fontSize:9,fontWeight:800,fontFamily:mono,letterSpacing:1,cursor:(feedOn||(feedUrl&&feedAck))?"pointer":"not-allowed",opacity:(feedOn||(feedUrl&&feedAck))?1:.5}}>{feedOn?"■ STOP POLLING":"▶ START LIVE FEED"}</button>
           <button onClick={()=>setSoundOn(v=>!v)} title="Beep on new snipe" style={{padding:"6px 10px",borderRadius:5,border:`1px solid ${soundOn?C.acc+"66":C.border}`,background:soundOn?C.accDim:C.bg3,color:soundOn?C.acc:C.t4,fontSize:11,cursor:"pointer"}}>{soundOn?"🔔":"🔕"}</button>
+          <button onClick={doScan} disabled={scanning||!(feedUrl&&feedAck)} title={!feedUrl?"Enter an endpoint first":!feedAck?"Tick the acknowledgement first":"One read-only server scan (token not stored)"} style={{padding:"6px 10px",borderRadius:5,border:`1px solid ${C.elite}66`,background:C.eliteDim,color:(feedUrl&&feedAck)?C.elite:C.t4,fontSize:9,fontWeight:800,fontFamily:mono,letterSpacing:.5,cursor:(scanning||!(feedUrl&&feedAck))?"default":"pointer",opacity:(feedUrl&&feedAck)?1:.5}}>{scanning?"…":"⚡ SCAN"}</button>
+          <button onClick={()=>{if(notifyPerm!=="granted"){askNotify();}else{setNotifyOn(v=>!v);}}} title={notifyPerm==="unsupported"?"Desktop notifications unsupported":notifyPerm!=="granted"?"Click to allow desktop notifications":(notifyOn?"Desktop alerts on":"Desktop alerts off")} disabled={notifyPerm==="unsupported"} style={{padding:"6px 10px",borderRadius:5,border:`1px solid ${notifyOn&&notifyPerm==="granted"?C.acc+"66":C.border}`,background:notifyOn&&notifyPerm==="granted"?C.accDim:C.bg3,color:notifyPerm==="unsupported"?C.t4:notifyOn&&notifyPerm==="granted"?C.acc:notifyPerm==="denied"?C.err:C.t4,fontSize:11,cursor:notifyPerm==="unsupported"?"not-allowed":"pointer",opacity:notifyPerm==="unsupported"?.5:1}}>{notifyPerm==="granted"&&notifyOn?"🛎":"🔔"}</button>
         </div>
+        {notifyPerm==="granted"&&!notifyOn&&<div style={{fontSize:6.5,color:C.t4,fontFamily:mono,marginTop:4}}>Desktop alerts allowed — click 🔔 to enable per-snipe notifications.</div>}
+        {notifyPerm==="denied"&&<div style={{fontSize:6.5,color:C.err,fontFamily:mono,marginTop:4}}>Desktop notifications blocked in your browser settings.</div>}
       </div>}
     </div>
+
+    {/* server scan results (on-demand, read-only) */}
+    {scanRes&&<div style={{marginBottom:7,padding:"7px 9px",borderRadius:7,background:C.bg2,border:`1px solid ${scanRes.ok?C.elite+"44":C.err+"44"}`}}>
+      {!scanRes.ok&&<div style={{fontSize:8,color:C.err,fontFamily:mono}}>scan error: {scanRes.error||"failed"}</div>}
+      {scanRes.ok&&<>
+        <div style={{fontSize:7,color:C.t3,fontFamily:mono,letterSpacing:1,marginBottom:5}}>⚡ SERVER SCAN · {scanRes.summary.scanned} scanned · {scanRes.summary.valued} valued · {scanRes.summary.snipes} snipe{scanRes.summary.snipes===1?"":"s"}</div>
+        {scanRes.snipes.length===0&&<div style={{fontSize:8,color:C.t4,fontFamily:mono}}>No snipes at your thresholds.</div>}
+        {scanRes.snipes.slice(0,12).map((s,i)=>(<div key={i} style={{display:"grid",gridTemplateColumns:"minmax(110px,1fr) 70px 64px 44px",gap:5,alignItems:"center",padding:"4px 6px",borderRadius:5,marginBottom:3,background:C.accDim,border:`1px solid ${C.acc}44`}}>
+          <div style={{display:"flex",alignItems:"center",gap:4,minWidth:0}}><HeatBadge h={s.heat}/><span style={{fontSize:10,fontWeight:600,color:C.t1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.name}</span></div>
+          <div style={{textAlign:"right",fontSize:10,fontWeight:700,color:C.warn,fontFamily:mono}}>{fPrice(s.buyNow)||s.buyNow}</div>
+          <div style={{textAlign:"right",fontSize:10,fontWeight:800,color:C.acc,fontFamily:mono}}>{fSigned(s.profit)}</div>
+          <div style={{textAlign:"right",fontSize:9,fontWeight:700,color:C.acc,fontFamily:mono}}>{s.disc!=null?s.disc+"%":"—"}</div>
+        </div>))}
+      </>}
+    </div>}
 
     {/* live listings */}
     {feedOn&&<div style={{marginBottom:7}}>
       {feedRows.length===0&&<div style={{padding:"10px",textAlign:"center",fontSize:8,color:C.t4,fontFamily:mono}}>{feedStat?.ok?"Feed connected — no listings parsed. Check your array/field paths.":"Waiting for feed..."}</div>}
-      {feedRows.length>0&&<div style={{maxHeight:200,overflowY:"auto",display:"flex",flexDirection:"column",gap:3,padding:"2px"}}>
-        {feedRows.map((r,i)=>(<div key={i} style={{display:"grid",gridTemplateColumns:"1fr 74px 64px 48px",gap:5,alignItems:"center",padding:"4px 7px",borderRadius:5,background:r.isSnipe?C.accDim:C.bg3,border:`1px solid ${r.isSnipe?C.acc+"55":C.border}`}}>
+      {feedRows.length>0&&<div style={{overflowX:"auto"}}><div style={{minWidth:330,maxHeight:200,overflowY:"auto",display:"flex",flexDirection:"column",gap:3,padding:"2px"}}>
+        {feedRows.map((r,i)=>(<div key={i} style={{display:"grid",gridTemplateColumns:"minmax(110px,1fr) 74px 64px 48px",gap:5,alignItems:"center",padding:"4px 7px",borderRadius:5,background:r.isSnipe?C.accDim:C.bg3,border:`1px solid ${r.isSnipe?C.acc+"55":C.border}`}}>
           <div style={{minWidth:0,display:"flex",alignItems:"center",gap:4}}>
             {r.isSnipe&&<span style={{fontSize:8}}>🎯</span>}
+            {r.isSnipe&&<HeatBadge h={r.heat}/>}
             <span style={{fontSize:10,fontWeight:600,color:C.t1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.l.name}</span>
             {!r.mp&&<span style={{fontSize:6,color:C.t4,fontFamily:mono}}>no mv</span>}
           </div>
@@ -776,17 +400,19 @@ function SnipePanel({players,search,listed,setListed,mvOv,setMvOv,profitMin,setP
           <div style={{textAlign:"right",fontSize:10,fontWeight:800,color:r.profit!=null?(r.isSnipe?C.acc:r.profit>0?C.blue:C.err):C.t4,fontFamily:mono}}>{fSigned(r.profit)}</div>
           <div style={{textAlign:"right",fontSize:9,fontWeight:700,color:r.disc!=null?(r.disc>=discountMin?C.acc:C.t3):C.t4,fontFamily:mono}}>{r.disc!=null?r.disc+"%":"—"}</div>
         </div>))}
-      </div>}
+      </div></div>}
     </div>}
 
     {noPrices&&<div style={{padding:"6px 9px",marginBottom:6,borderRadius:5,background:C.warnDim,border:`1px solid ${C.warn}33`,fontSize:8,color:C.warn,fontFamily:mono}}>
-      ⚠ No market values yet. Hit REFRESH to pull live prices from mut.gg, or type a market value per card below.
+      ⚠ No market values yet. Hit PRICES to pull live values from mut.gg, or type a market value per card below.
     </div>}
 
     <div style={{fontSize:6,color:C.t3,fontFamily:mono,letterSpacing:1,padding:"2px 8px 4px"}}>MANUAL ENTRY</div>
 
+    {/* horizontal-scroll wrapper keeps the fixed grid columns from spilling on phones */}
+    <div style={{overflowX:"auto"}}><div style={{minWidth:340}}>
     {/* column header */}
-    <div style={{display:"grid",gridTemplateColumns:"1fr 78px 78px 64px 52px",gap:5,padding:"0 8px 4px",fontSize:6,color:C.t3,fontFamily:mono,letterSpacing:1}}>
+    <div style={{display:"grid",gridTemplateColumns:"minmax(120px,1fr) 78px 78px 64px 52px",gap:5,padding:"0 8px 4px",fontSize:6,color:C.t3,fontFamily:mono,letterSpacing:1}}>
       <span>PLAYER</span><span>MARKET</span><span>LISTED @</span><span style={{textAlign:"right"}}>PROFIT</span><span style={{textAlign:"right"}}>DISC</span>
     </div>
 
@@ -794,10 +420,11 @@ function SnipePanel({players,search,listed,setListed,mvOv,setMvOv,profitMin,setP
 
     {rows.map(r=>{
       const pc=r.isSnipe?C.acc:r.profit!=null?(r.profit>0?C.blue:C.err):C.t4;
-      return(<div key={r.key} style={{display:"grid",gridTemplateColumns:"1fr 78px 78px 64px 52px",gap:5,alignItems:"center",padding:"6px 8px",marginBottom:4,borderRadius:6,background:r.isSnipe?C.accDim:C.bg2,border:`1px solid ${r.isSnipe?C.acc+"55":C.border}`,boxShadow:r.isSnipe?`0 0 12px ${C.acc}14`:"none",transition:"all .2s"}}>
+      return(<div key={r.key} style={{display:"grid",gridTemplateColumns:"minmax(120px,1fr) 78px 78px 64px 52px",gap:5,alignItems:"center",padding:"6px 8px",marginBottom:4,borderRadius:6,background:r.isSnipe?C.accDim:C.bg2,border:`1px solid ${r.isSnipe?C.acc+"55":C.border}`,boxShadow:r.isSnipe?`0 0 12px ${C.acc}14`:"none",transition:"all .2s"}}>
         <div style={{minWidth:0}}>
           <div style={{display:"flex",alignItems:"center",gap:4}}>
             {r.isSnipe&&<span style={{fontSize:8,color:C.acc}}>🎯</span>}
+            {r.isSnipe&&<HeatBadge h={r.heat}/>}
             <span style={{fontSize:11,fontWeight:700,color:C.t1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.p.name}</span>
           </div>
           <div style={{fontSize:7,color:C.t3,fontFamily:mono}}>{r.p.pos}{r.p.sub&&r.p.sub!==r.p.pos?` · ${r.p.sub}`:""} · {r.p.card} · {r.p.ovr}</div>
@@ -808,47 +435,303 @@ function SnipePanel({players,search,listed,setListed,mvOv,setMvOv,profitMin,setP
         <div style={{textAlign:"right",fontSize:10,fontWeight:700,color:r.disc!=null?(r.discOk?C.acc:r.disc>0?C.t2:C.err):C.t4,fontFamily:mono}}>{r.disc!=null?r.disc+"%":"—"}</div>
       </div>);
     })}
+    </div></div>
   </div>);
 }
 
+function fmtPct(n){if(n==null)return null;return (n>0?"+":"")+n.toFixed(1)+"%";}
+
+// Client-side price history. mut.gg exposes no public price series, so we record
+// our own real snapshots (capped ring buffer) each time a price is seen.
+function histKey(pk,plat){return `mut.hist.${pk}.${plat}`;}
+function getHistory(pk,plat){try{return JSON.parse(localStorage.getItem(histKey(pk,plat)))||[];}catch{return[];}}
+function pushHistory(pk,plat,price){
+  if(!pk||!price||price<=0)return;
+  const key=histKey(pk,plat);let arr=[];try{arr=JSON.parse(localStorage.getItem(key))||[];}catch{}
+  const now=Date.now(),last=arr[arr.length-1];
+  if(!last||last.p!==price||now-last.t>3600000)arr.push({t:now,p:price});
+  if(arr.length>40)arr=arr.slice(-40);
+  try{localStorage.setItem(key,JSON.stringify(arr));}catch{}
+}
+
+// Tiny SVG sparkline of whatever real points we've collected so far.
+function Spark({data,w=52,h=16}){
+  if(!data||data.length<2)return <div style={{width:w,height:h,display:"flex",alignItems:"center",justifyContent:"center",fontSize:6,color:C.t4,fontFamily:"'Space Mono',monospace"}}>·</div>;
+  const ps=data.map(d=>d.p),min=Math.min(...ps),max=Math.max(...ps),rng=max-min||1;
+  const pts=data.map((d,i)=>{const x=(i/(data.length-1))*(w-2)+1;const y=h-1-((d.p-min)/rng)*(h-2);return `${x.toFixed(1)},${y.toFixed(1)}`;}).join(" ");
+  const up=ps[ps.length-1]>=ps[0];
+  return <svg width={w} height={h} style={{display:"block"}}><polyline points={pts} fill="none" stroke={up?C.acc:C.err} strokeWidth="1.2" strokeLinejoin="round" strokeLinecap="round"/></svg>;
+}
+
+// mut.gg position abbreviations (LEDG/REDG for edges; MIKE/WILL/SAM for LBs)
+const CAT_POS=["","QB","HB","FB","WR","TE","LT","LG","C","RG","RT","LEDG","REDG","DT","MIKE","WILL","SAM","CB","FS","SS","K","P"];
+const CAT_SORTS=[["ovr_desc","OVR ↓"],["ovr_asc","OVR ↑"],["price_desc","PRICE ↓"],["price_asc","PRICE ↑"],["change_desc","CHANGE ↓"],["change_asc","CHANGE ↑"]];
+
+// Market Catalog. Two modes: BROWSE paginates the full card DB (metadata from
+// mut.gg's /players/ pages); SEARCH (Pro) hits the priced name index.
+function CatalogPanel({platform,search,onAdd,addedKeys,isPro,onUpgrade}){
+  const mono="'Space Mono',monospace";
+  const sel={height:26,padding:"0 6px",borderRadius:5,border:`1px solid ${C.border}`,background:C.bg2,color:C.t2,fontSize:9,fontFamily:mono,fontWeight:700,cursor:"pointer",outline:"none"};
+  const[rows,setRows]=useState([]),[loading,setLoading]=useState(false);
+  const[sort,setSort]=useLS("mut.cat.sort","ovr_desc"),[position,setPosition]=useLS("mut.cat.pos","");
+  const[ovrMin,setOvrMin]=useLS("mut.cat.ovrmin",0),[auctionOnly,setAuctionOnly]=useLS("mut.cat.auction",false);
+  const[page,setPage]=useState(1),[hasMore,setHasMore]=useState(false),[mode,setMode]=useState("browse"),[err,setErr]=useState(null);
+
+  // Search is a Pro feature; free users browse the paginated metadata catalog.
+  const searching=!!search.trim();
+  const effQ=isPro?search.trim():"";
+  const locked=searching&&!isPro;
+
+  // Reset to page 1 whenever the query shape changes.
+  useEffect(()=>{setPage(1);},[platform,effQ,sort,position,ovrMin,auctionOnly]);
+
+  useEffect(()=>{
+    let alive=true;setLoading(true);setErr(null);
+    const params=new URLSearchParams({platform,sort,page:String(page)});
+    if(effQ)params.set("q",effQ);
+    if(position)params.set("position",position);
+    if(ovrMin)params.set("overallMin",String(ovrMin));
+    if(auctionOnly)params.set("auctionOnly","1");
+    fetch(`/api/catalog?${params.toString()}`).then(r=>r.json()).then(j=>{
+      if(!alive)return;
+      const data=j.data||[];
+      data.forEach(c=>pushHistory(c.pk,platform,c.price));
+      setRows(data);setHasMore(!!j.hasMore);setMode(j.mode||"browse");setErr(j.error||null);
+    }).catch(e=>{if(alive)setErr(e.message);}).finally(()=>{if(alive)setLoading(false);});
+    return()=>{alive=false;};
+  },[platform,effQ,sort,position,ovrMin,auctionOnly,page]);
+
+  return(<div style={{animation:"fadeIn .4s ease"}}>
+    <div style={{display:"flex",gap:5,flexWrap:"wrap",alignItems:"center",padding:"7px 9px",borderRadius:7,background:`linear-gradient(135deg,${C.bg2},${C.bg4})`,border:`1px solid ${C.border}`,marginBottom:7}}>
+      <select value={position} onChange={e=>setPosition(e.target.value)} title="Position" style={sel}>
+        {CAT_POS.map(p=><option key={p} value={p}>{p||"ALL POS"}</option>)}
+      </select>
+      <select value={sort} onChange={e=>setSort(e.target.value)} title="Sort" style={sel}>
+        {CAT_SORTS.map(([v,l])=><option key={v} value={v}>{l}</option>)}
+      </select>
+      <select value={ovrMin} onChange={e=>setOvrMin(parseInt(e.target.value)||0)} title="Minimum overall" style={sel}>
+        {[0,80,85,88,90,92,94,95,96,97,98,99].map(v=><option key={v} value={v}>{v?`OVR ≥ ${v}`:"ANY OVR"}</option>)}
+      </select>
+      <button onClick={()=>setAuctionOnly(v=>!v)} title="Only auctionable cards" style={{...sel,color:auctionOnly?C.acc:C.t3,borderColor:auctionOnly?C.acc+"66":C.border,background:auctionOnly?C.accDim:C.bg2}}>{auctionOnly?"✓ AUCTIONABLE":"AUCTIONABLE"}</button>
+      <div style={{flex:1}}/>
+      <span style={{fontSize:7,color:C.t3,fontFamily:mono}}>{loading?"loading…":`${rows.length} ${mode==="browse"?`· pg ${page}`:"matches"} · ${platform.toUpperCase()}`}</span>
+    </div>
+
+    {err&&<div style={{padding:"6px 9px",marginBottom:6,borderRadius:5,background:C.errDim,border:`1px solid ${C.err}33`,fontSize:8,color:C.err,fontFamily:mono}}>catalog error: {err}</div>}
+
+    <div style={{overflowX:"auto"}}><div style={{minWidth:360}}>
+    <div style={{display:"grid",gridTemplateColumns:"26px minmax(120px,1fr) 52px 72px 48px 22px",gap:5,padding:"0 8px 4px",fontSize:6,color:C.t3,fontFamily:mono,letterSpacing:1}}>
+      <span/><span>PLAYER</span><span>TREND</span><span style={{textAlign:"right"}}>PRICE</span><span style={{textAlign:"right"}}>CHG</span><span/>
+    </div>
+
+    {!loading&&rows.length===0&&!locked&&<div style={{padding:20,textAlign:"center",color:C.t4,fontFamily:mono,fontSize:10}}>{effQ?`No results for "${effQ}"`:"No cards"}</div>}
+
+    {rows.map(c=>{
+      const chg=fmtPct(c.pctChange);
+      const cc=c.pctChange==null?C.t4:c.pctChange>0?C.acc:c.pctChange<0?C.err:C.t3;
+      const ckey=`${c.name}__${c.program}__${c.pos}__${c.pos}`;
+      const added=addedKeys&&addedKeys.has(ckey);
+      return(<div key={c.pk} style={{display:"grid",gridTemplateColumns:"26px minmax(120px,1fr) 52px 72px 48px 22px",gap:5,alignItems:"center",padding:"5px 8px",marginBottom:4,borderRadius:6,background:C.bg2,border:`1px solid ${C.border}`}}>
+        <div style={{width:26,height:26,borderRadius:4,overflow:"hidden",background:C.bg3,display:"flex",alignItems:"center",justifyContent:"center"}}>
+          {c.image?<img src={c.image} alt="" width={26} height={26} loading="lazy" style={{objectFit:"cover",objectPosition:"top"}}/>:<span style={{fontSize:8,color:C.t4,fontFamily:mono}}>{c.pos}</span>}
+        </div>
+        <div style={{minWidth:0}}>
+          <div style={{display:"flex",alignItems:"center",gap:5}}>
+            <span style={{fontSize:9,fontWeight:800,color:C.acc,fontFamily:mono,minWidth:18}}>{c.ovr}</span>
+            <span style={{fontSize:11,fontWeight:700,color:C.t1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.name}</span>
+            {!c.canAuction&&<span style={{fontSize:6,color:C.warn,fontFamily:mono,background:C.warnDim,padding:"1px 3px",borderRadius:2}}>NA</span>}
+          </div>
+          <div style={{fontSize:7,color:C.t3,fontFamily:mono,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{[c.pos,c.program,c.team,c.archetype].filter(Boolean).join(" · ")}</div>
+        </div>
+        <div title="Price history (builds as you refresh)"><Spark data={getHistory(c.pk,platform)}/></div>
+        <div style={{textAlign:"right",fontSize:11,fontWeight:800,color:c.price>0?C.coin:C.t4,fontFamily:mono}}>{c.price>0?(fPrice(c.price)||c.price):"—"}</div>
+        <div style={{textAlign:"right",fontSize:9,fontWeight:700,color:cc,fontFamily:mono}}>{chg||"—"}</div>
+        <button onClick={()=>!added&&onAdd&&onAdd(c)} disabled={added} title={added?"In Snipe watchlist":"Add to Snipe watchlist"} style={{width:22,height:22,borderRadius:4,border:`1px solid ${added?C.acc+"55":C.border}`,background:added?C.accDim:C.bg3,color:added?C.acc:C.t2,fontSize:11,fontWeight:700,cursor:added?"default":"pointer",lineHeight:1,padding:0}}>{added?"✓":"+"}</button>
+      </div>);
+    })}
+    </div></div>
+
+    {/* Soft paywall — name search is a Pro feature; free users browse the top set. */}
+    {locked&&<div style={{margin:"10px 0 2px",padding:"14px 12px",borderRadius:8,textAlign:"center",background:`linear-gradient(135deg,${C.eliteDim},${C.bg2})`,border:`1px solid ${C.elite}44`}}>
+      <div style={{fontSize:11,fontWeight:800,color:C.elite,fontFamily:mono,letterSpacing:.5}}>🔒 PRO UNLOCKS CARD SEARCH</div>
+      <div style={{fontSize:9,color:C.t2,fontFamily:"'Outfit',sans-serif",margin:"5px auto 9px",maxWidth:320,lineHeight:1.5}}>Free members browse the live top cards. Pro members search the full mut.gg name index for any card on any platform.</div>
+      <button onClick={onUpgrade} style={{padding:"7px 18px",borderRadius:6,border:`1px solid ${C.elite}`,background:C.elite,color:C.bg,fontSize:10,fontWeight:800,fontFamily:mono,letterSpacing:1,cursor:"pointer"}}>UPGRADE TO PRO →</button>
+    </div>}
+
+    {/* Pager — real in browse mode (mut.gg /players pages); search mode is single-page. */}
+    {mode==="browse"&&!locked&&<div style={{display:"flex",gap:6,alignItems:"center",justifyContent:"center",padding:"8px 0 2px"}}>
+      <button onClick={()=>setPage(p=>Math.max(1,p-1))} disabled={page<=1||loading} style={{padding:"5px 12px",borderRadius:5,border:`1px solid ${C.border}`,background:page<=1?C.bg2:C.bg3,color:page<=1?C.t4:C.t2,fontSize:9,fontFamily:mono,fontWeight:700,cursor:page<=1?"default":"pointer"}}>← PREV</button>
+      <span style={{fontSize:8,color:C.t3,fontFamily:mono}}>PAGE {page}</span>
+      <button onClick={()=>setPage(p=>p+1)} disabled={!hasMore||loading} style={{padding:"5px 12px",borderRadius:5,border:`1px solid ${C.border}`,background:!hasMore?C.bg2:C.bg3,color:!hasMore?C.t4:C.t2,fontSize:9,fontFamily:mono,fontWeight:700,cursor:!hasMore?"default":"pointer"}}>NEXT →</button>
+    </div>}
+
+    <div style={{textAlign:"center",fontSize:6.5,color:C.t4,fontFamily:mono,padding:"8px 0 2px"}}>{mode==="browse"?"Browsing the full mut.gg catalog (metadata). Search a name for live prices.":"Priced name matches from mut.gg."} Prices are mut.gg community values.</div>
+  </div>);
+}
+
+// ---- Accounts & subscriptions (Phase 4) ------------------------------------
+// useAuth: loads the current user from /api/auth/me on mount and exposes the
+// auth actions. All network state is server-backed (HttpOnly session cookie),
+// so there's nothing sensitive in localStorage here.
+function useAuth(){
+  const[user,setUser]=useState(null);
+  const[loading,setLoading]=useState(true);
+
+  const refresh=useCallback(async()=>{
+    try{
+      const r=await fetch("/api/auth/me");
+      if(r.ok){const j=await r.json();setUser(j.user||null);}
+      else setUser(null);
+    }catch{setUser(null);}
+    finally{setLoading(false);}
+  },[]);
+
+  useEffect(()=>{refresh();},[refresh]);
+
+  // login/signup share a shape: resolve {ok} or {ok:false,error}. On success the
+  // server sets the cookie and returns the safe user, which we store directly.
+  const auth=useCallback(async(path,email,password)=>{
+    try{
+      const r=await fetch(path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email,password})});
+      const j=await r.json().catch(()=>({}));
+      if(!r.ok)return{ok:false,error:j.error||`HTTP ${r.status}`};
+      setUser(j.user||null);
+      return{ok:true};
+    }catch(e){return{ok:false,error:e.message};}
+  },[]);
+
+  const login=useCallback((email,password)=>auth("/api/auth/login",email,password),[auth]);
+  const signup=useCallback((email,password)=>auth("/api/auth/signup",email,password),[auth]);
+  const logout=useCallback(async()=>{try{await fetch("/api/auth/logout",{method:"POST"});}catch{}setUser(null);},[]);
+
+  return{user,loading,login,signup,logout,refresh};
+}
+
+// Shared centered-overlay shell for the auth + pricing modals.
+function Modal({onClose,children,width=340}){
+  return(<div onClick={onClose} style={{position:"fixed",inset:0,zIndex:200,background:"#000000bb",backdropFilter:"blur(2px)",display:"flex",alignItems:"center",justifyContent:"center",padding:16,overflowY:"auto",animation:"fadeIn .2s"}}>
+    <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:width,maxHeight:"calc(100vh - 32px)",overflowY:"auto",background:C.bg2,border:`1px solid ${C.borderHi}`,borderRadius:10,boxShadow:`0 12px 48px #000a, 0 0 0 1px ${C.border}`}}>
+      {children}
+    </div>
+  </div>);
+}
+
+// Auth modal — toggles between Login and Sign up against the same fields.
+function AuthModal({onClose,login,signup}){
+  const mono="'Space Mono',monospace";
+  const[mode,setMode]=useState("login");
+  const[email,setEmail]=useState(""),[pw,setPw]=useState("");
+  const[busy,setBusy]=useState(false),[err,setErr]=useState(null);
+  const inp={width:"100%",padding:"8px 9px",background:C.bg,border:`1px solid ${C.border}`,borderRadius:5,color:C.t1,fontSize:11,fontFamily:mono,outline:"none",marginBottom:8};
+
+  const submit=async(e)=>{
+    e.preventDefault();
+    if(busy)return;
+    setErr(null);
+    if(mode==="signup"&&pw.length<8){setErr("Password must be at least 8 characters.");return;}
+    setBusy(true);
+    const r=await (mode==="login"?login(email,pw):signup(email,pw));
+    setBusy(false);
+    if(r.ok)onClose();
+    else setErr(r.error||"Something went wrong.");
+  };
+
+  return(<Modal onClose={onClose}>
+    <div style={{padding:"16px 16px 6px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+      <div style={{fontSize:14,fontWeight:800,letterSpacing:-.3}}>{mode==="login"?"Sign in":"Create account"}</div>
+      <button onClick={onClose} style={{background:"none",border:"none",color:C.t3,fontSize:16,cursor:"pointer",lineHeight:1,padding:2}}>✕</button>
+    </div>
+    <form onSubmit={submit} style={{padding:"4px 16px 16px"}}>
+      <input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="you@email.com" autoComplete="email" style={inp}/>
+      <input type="password" value={pw} onChange={e=>setPw(e.target.value)} placeholder={mode==="signup"?"Password (8+ chars)":"Password"} autoComplete={mode==="login"?"current-password":"new-password"} style={inp}/>
+      {err&&<div style={{fontSize:9,color:C.err,fontFamily:mono,marginBottom:8,padding:"5px 7px",background:C.errDim,borderRadius:4,border:`1px solid ${C.err}33`}}>{err}</div>}
+      <button type="submit" disabled={busy||!email||!pw} style={{width:"100%",padding:"9px",borderRadius:6,border:"none",background:C.acc,color:C.bg,fontSize:11,fontWeight:800,fontFamily:mono,letterSpacing:1,cursor:busy?"default":"pointer",opacity:(busy||!email||!pw)?.6:1}}>{busy?"…":(mode==="login"?"SIGN IN":"SIGN UP")}</button>
+    </form>
+    <div style={{padding:"10px 16px",borderTop:`1px solid ${C.border}`,fontSize:9,color:C.t3,fontFamily:mono,textAlign:"center"}}>
+      {mode==="login"?"No account yet? ":"Already have one? "}
+      <button onClick={()=>{setMode(m=>m==="login"?"signup":"login");setErr(null);}} style={{background:"none",border:"none",color:C.acc,fontSize:9,fontFamily:mono,fontWeight:700,cursor:"pointer",padding:0}}>{mode==="login"?"Create one":"Sign in"}</button>
+    </div>
+  </Modal>);
+}
+
+// Pricing modal — one paid tier ("Pro"). Marketing copy is original to this app.
+function PricingModal({onClose,user,isPro,onUpgrade,onNeedAuth}){
+  const mono="'Space Mono',monospace";
+  const[busy,setBusy]=useState(false),[err,setErr]=useState(null);
+  const perks=[
+    "Search the full mut.gg name index — find any card, not just the top set",
+    "Every platform's pricing in one sweep (PS5/PS4/XBSX/XB1/PC)",
+    "Priority on new spotter features as they ship",
+    "Support an indie tool built by one flipper, for flippers",
+  ];
+
+  const upgrade=async()=>{
+    if(busy)return;
+    if(!user){onNeedAuth&&onNeedAuth();return;}
+    setBusy(true);setErr(null);
+    const r=await onUpgrade();
+    setBusy(false);
+    if(r&&r.error)setErr(r.error);
+  };
+
+  return(<Modal onClose={onClose} width={380}>
+    <div style={{padding:"16px 16px 6px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+      <div style={{fontSize:14,fontWeight:800,letterSpacing:-.3}}>Panda Actual Sniper <span style={{color:C.elite}}>Pro</span></div>
+      <button onClick={onClose} style={{background:"none",border:"none",color:C.t3,fontSize:16,cursor:"pointer",lineHeight:1,padding:2}}>✕</button>
+    </div>
+    <div style={{padding:"4px 16px 16px"}}>
+      <div style={{fontSize:10,color:C.t2,fontFamily:"'Outfit',sans-serif",lineHeight:1.5,marginBottom:12}}>
+        The free tier flags snipes and shows you the top of the market. Pro takes the lid off — browse the whole board and keep every edge as the tool grows.
+      </div>
+      <div style={{borderRadius:8,border:`1px solid ${C.elite}44`,background:`linear-gradient(135deg,${C.eliteDim},${C.bg})`,padding:"14px 14px 16px",marginBottom:12}}>
+        <div style={{display:"flex",alignItems:"baseline",gap:6,marginBottom:10}}>
+          <span style={{fontSize:24,fontWeight:900,color:C.t1,fontFamily:mono}}>Pro</span>
+          <span style={{fontSize:9,color:C.t3,fontFamily:mono}}>billed via Stripe</span>
+        </div>
+        {perks.map((p,i)=>(<div key={i} style={{display:"flex",gap:7,alignItems:"flex-start",marginBottom:7}}>
+          <span style={{color:C.elite,fontSize:11,lineHeight:1.3,flexShrink:0}}>◆</span>
+          <span style={{fontSize:10,color:C.t1,fontFamily:"'Outfit',sans-serif",lineHeight:1.4}}>{p}</span>
+        </div>))}
+      </div>
+      {err&&<div style={{fontSize:9,color:C.err,fontFamily:mono,marginBottom:8,padding:"5px 7px",background:C.errDim,borderRadius:4,border:`1px solid ${C.err}33`}}>{err}</div>}
+      {isPro
+        ?<div style={{padding:"9px",borderRadius:6,textAlign:"center",background:C.accDim,border:`1px solid ${C.acc}55`,fontSize:10,fontWeight:800,color:C.acc,fontFamily:mono,letterSpacing:1}}>✓ YOU'RE ON PRO — full catalog unlocked</div>
+        :<button onClick={upgrade} disabled={busy} style={{width:"100%",padding:"10px",borderRadius:6,border:"none",background:C.elite,color:C.bg,fontSize:11,fontWeight:800,fontFamily:mono,letterSpacing:1,cursor:busy?"default":"pointer",opacity:busy?.6:1}}>{busy?"REDIRECTING…":(user?"UPGRADE TO PRO →":"SIGN IN TO UPGRADE")}</button>}
+      <div style={{fontSize:7.5,color:C.t4,fontFamily:mono,textAlign:"center",marginTop:9,lineHeight:1.5}}>Checkout is handled by Stripe. Billing is disabled until the operator configures Stripe keys.</div>
+    </div>
+  </Modal>);
+}
+
 export default function App(){
-  const[pos,setPos]=useState("QB"),[sub,setSub]=useState(null),[tab,setTab]=useState("players");
-  const[search,setSearch]=useState(""),[tt,setTt]=useState(false);
-  const[players,setPlayers]=useState(INIT),[loaded,setLoaded]=useState(false);
-  const[rfr,setRfr]=useState(false),[rfrP,setRfrP]=useState(""),[lr,setLr]=useState("Initial · Mar 2 2026 · mut.gg verified");
-  const[rLog,setRLog]=useState([]),[showLog,setShowLog]=useState(false),[rCount,setRCount]=useState(0);
+  const[loaded,setLoaded]=useState(false);
+  const[tab,setTab]=useLS("mut.tab","snipe");
+  const[search,setSearch]=useState("");
+  const[players,setPlayers]=useState(INIT);
+  const[lr,setLr]=useState("Initial · Mar 2 2026 · mut.gg verified");
   const[snListed,setSnListed]=useLS("mut.snipe.listed",{}),[snMvOv,setSnMvOv]=useLS("mut.snipe.mvOv",{});
   const[profitMin,setProfitMin]=useLS("mut.snipe.profitMin",5000),[discountMin,setDiscountMin]=useLS("mut.snipe.discountMin",15),[matchMode,setMatchMode]=useLS("mut.snipe.matchMode","any");
   const[plat,setPlat]=useLS("mut.plat","ps5"),[mgRfr,setMgRfr]=useState(false);
+  const[heroDismissed,setHeroDismissed]=useLS("mut.hero.dismissed",false);
+  const narrow=useIsNarrow();
+
+  // --- Accounts & subscriptions ---
+  const{user,loading:authLoading,login,signup,logout}=useAuth();
+  const isPro=user?.subStatus==="active";
+  const[authOpen,setAuthOpen]=useState(false),[pricingOpen,setPricingOpen]=useState(false),[acctMenu,setAcctMenu]=useState(false);
+
+  // Kick off Stripe Checkout and redirect to the returned session URL.
+  const startCheckout=useCallback(async()=>{
+    try{
+      const r=await fetch("/api/billing/checkout",{method:"POST",headers:{"Content-Type":"application/json"}});
+      const j=await r.json().catch(()=>({}));
+      if(r.ok&&j.url){window.location.href=j.url;return{ok:true};}
+      return{error:j.error||`Checkout failed (HTTP ${r.status}).`};
+    }catch(e){return{error:e.message};}
+  },[]);
 
   useEffect(()=>{const l=document.createElement("link");l.href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Outfit:wght@300;400;500;600;700;800;900&display=swap";l.rel="stylesheet";document.head.appendChild(l);setTimeout(()=>setLoaded(true),150);},[]);
-  useEffect(()=>{setSub(null);},[pos]);
 
-  const doRefresh=useCallback(async()=>{
-    if(rfr)return;
-    setRfr(true);
-    const sessionId=Date.now();
-    const initLog=RM.map(rm=>({label:rm.label,pos:rm.pos,sub:rm.sub,status:"pending",ts:"",count:0,sessionId}));
-    setRLog(initLog);setShowLog(true);
-    let nP=[...players],up=0;
-    for(let i=0;i<RM.length;i++){
-      const rm=RM[i];
-      setRfrP(`${rm.label}...`);
-      setRLog(prev=>prev.map((e,idx)=>idx===i?{...e,status:"running",ts:new Date().toLocaleTimeString("en",{hour12:false,hour:"2-digit",minute:"2-digit",second:"2-digit"})}:e));
-      const res=await fetchLive(rm.label,rm.pos,rm.sub);
-      if(res&&Array.isArray(res)){
-        nP=nP.filter(p=>!(p.pos===rm.pos&&p.sub===rm.sub));
-        res.forEach(r=>nP.push({pos:rm.pos,sub:rm.sub,name:r.name||"?",card:r.card||"?",ovr:r.ovr||0,arch:r.arch||rm.sub,start:r.start||0,price:r.price||0,wgt:r.wgt||0,rel:r.rel||"",abilities:Array.isArray(r.abilities)?r.abilities:[],traits:r.traits||{},dna:r.dna||"",s:r.s||{}}));
-        up++;
-        setRLog(prev=>prev.map((e,idx)=>idx===i?{...e,status:"ok",count:res.length}:e));
-      } else {
-        setRLog(prev=>prev.map((e,idx)=>idx===i?{...e,status:"fail"}:e));
-      }
-      await new Promise(r=>setTimeout(r,3000));
-    }
-    setPlayers(nP);setRCount(c=>c+1);setLr(`${new Date().toLocaleTimeString()} · ${up}/${RM.length} refreshed`);setRfrP("");setRfr(false);
-  },[rfr,players]);
-
+  // Pull live market values from mut.gg's public price index and merge onto the roster
   const doMutgg=useCallback(async()=>{
     if(mgRfr)return;setMgRfr(true);
     try{
@@ -863,18 +746,15 @@ export default function App(){
     setMgRfr(false);
   },[mgRfr,players,plat]);
 
-  const cfg=PC[pos];
-  const pl=useMemo(()=>{
-    let l=players.filter(p=>p.pos===pos);
-    if(sub)l=l.filter(p=>p.sub===sub);
-    if(tt)l=l.map(p=>({...p,s:{...p.s,SPD:p.s.SPD?Math.min(99,p.s.SPD+2):p.s.SPD},ttB:true}));
-    if(search.trim()){const q=search.toLowerCase();l=l.filter(p=>p.name.toLowerCase().includes(q)||p.card.toLowerCase().includes(q));}
-    return l.sort((a,b)=>{
-      const ma=getMetaNum(a),mb=getMetaNum(b);
-      if(ma!==mb)return mb-ma;
-      return b.start-a.start;
+  // Add a catalog card to the Snipe roster (dedup by name+program+pos)
+  const addToSnipe=useCallback((c)=>{
+    setPlayers(ps=>{
+      const sub=c.pos,key=`${c.name}__${c.program}__${c.pos}__${sub}`;
+      if(ps.some(p=>`${p.name}__${p.card}__${p.pos}__${p.sub}`===key))return ps;
+      return[...ps,{pos:c.pos,sub,name:c.name,card:c.program||"?",ovr:c.ovr||0,arch:c.archetype||"",start:0,price:c.price||0,s:{}}];
     });
-  },[pos,sub,tt,search,players]);
+  },[]);
+  const addedKeys=useMemo(()=>new Set(players.map(p=>`${p.name}__${p.card}__${p.pos}__${p.sub}`)),[players]);
 
   return(<div style={{minHeight:"100vh",background:C.bg,color:C.t1,fontFamily:"'Outfit',sans-serif",opacity:loaded?1:0,transition:"opacity .5s"}}>
     <style>{`@keyframes fadeIn{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}@keyframes pulse{0%,100%{opacity:.3}50%{opacity:1}}@keyframes spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}*{box-sizing:border-box}::-webkit-scrollbar{width:3px}::-webkit-scrollbar-track{background:${C.bg}}::-webkit-scrollbar-thumb{background:${C.border};border-radius:3px}input::placeholder{color:${C.t4}}`}</style>
@@ -884,7 +764,7 @@ export default function App(){
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:7,flexWrap:"wrap"}}>
         <div style={{display:"flex",alignItems:"center",gap:7}}>
           <div style={{width:28,height:28,borderRadius:6,display:"flex",alignItems:"center",justifyContent:"center",background:`linear-gradient(135deg,${C.acc},${C.elite})`,fontSize:13,fontWeight:900}}>◈</div>
-          <div><div style={{fontSize:15,fontWeight:800,letterSpacing:-.5}}>MUT <span style={{color:C.acc}}>ALPHA</span></div><div style={{fontSize:7,color:C.t3,fontFamily:"'Space Mono',monospace",letterSpacing:1}}>LIVE DATA · MUT.GG VERIFIED</div></div>
+          <div><div style={{fontSize:15,fontWeight:800,letterSpacing:-.5}}>PANDA ACTUAL <span style={{color:C.acc}}>SNIPER</span></div><div style={{fontSize:7,color:C.t3,fontFamily:"'Space Mono',monospace",letterSpacing:1}}>SNIPE · CATALOG · MUT.GG PRICED</div></div>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:4}}>
           <div style={{display:"flex",alignItems:"center",gap:3,padding:"2px 7px",background:C.accDim,borderRadius:4,border:`1px solid ${C.acc}33`}}>
@@ -897,94 +777,96 @@ export default function App(){
             <span style={{fontSize:11}}>🪙</span>
             <span style={{fontSize:8,fontWeight:600,color:mgRfr?C.coin:C.t3,fontFamily:"'Space Mono',monospace"}}>{mgRfr?"...":"PRICES"}</span>
           </button>
-          <button onClick={doRefresh} disabled={rfr} title={lr} style={{height:28,padding:"0 9px",borderRadius:5,border:`1px solid ${rfr?C.acc+"66":C.border}`,background:rfr?C.accDim:C.bg2,cursor:rfr?"default":"pointer",display:"flex",alignItems:"center",gap:4,transition:"all .2s"}}>
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={rfr?C.acc:C.t3} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{animation:rfr?"spin .7s linear infinite":"none"}}><path d="M21.5 2v6h-6M2.5 22v-6h6"/><path d="M2.5 11.5a10 10 0 0 1 18.4-4.5M21.5 12.5a10 10 0 0 1-18.4 4.5"/></svg>
-            <span style={{fontSize:8,fontWeight:600,color:rfr?C.acc:C.t3,fontFamily:"'Space Mono',monospace"}}>{rfr?"LIVE":"REFRESH"}</span>
-          </button>
+
+          {/* Account button — email + menu when signed in, "Sign in" otherwise. */}
+          <div style={{position:"relative"}}>
+            {authLoading
+              ?<div style={{height:28,padding:"0 9px",display:"flex",alignItems:"center",fontSize:8,color:C.t4,fontFamily:"'Space Mono',monospace"}}>…</div>
+              :user
+                ?<button onClick={()=>setAcctMenu(o=>!o)} title={user.email} style={{height:28,padding:"0 9px",borderRadius:5,border:`1px solid ${isPro?C.elite+"66":C.border}`,background:isPro?C.eliteDim:C.bg2,cursor:"pointer",display:"flex",alignItems:"center",gap:5,maxWidth:160}}>
+                    <span style={{width:16,height:16,borderRadius:"50%",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",background:isPro?C.elite:C.acc,color:C.bg,fontSize:9,fontWeight:900,fontFamily:"'Space Mono',monospace"}}>{(user.email||"?")[0].toUpperCase()}</span>
+                    <span style={{fontSize:8,fontWeight:600,color:C.t2,fontFamily:"'Space Mono',monospace",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{user.email}</span>
+                    {isPro&&<span style={{fontSize:6,fontWeight:800,color:C.elite,fontFamily:"'Space Mono',monospace",letterSpacing:.5}}>PRO</span>}
+                  </button>
+                :<button onClick={()=>setAuthOpen(true)} style={{height:28,padding:"0 11px",borderRadius:5,border:`1px solid ${C.acc}55`,background:C.accDim,color:C.acc,fontSize:8,fontWeight:800,fontFamily:"'Space Mono',monospace",letterSpacing:1,cursor:"pointer"}}>SIGN IN</button>}
+            {user&&acctMenu&&<>
+              <div onClick={()=>setAcctMenu(false)} style={{position:"fixed",inset:0,zIndex:149}}/>
+              <div style={{position:"absolute",right:0,top:32,zIndex:150,minWidth:170,background:C.bg2,border:`1px solid ${C.borderHi}`,borderRadius:7,boxShadow:"0 8px 28px #000a",overflow:"hidden",animation:"fadeIn .15s"}}>
+                <div style={{padding:"8px 11px",borderBottom:`1px solid ${C.border}`}}>
+                  <div style={{fontSize:9,color:C.t1,fontFamily:"'Space Mono',monospace",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{user.email}</div>
+                  <div style={{fontSize:7,color:isPro?C.elite:C.t3,fontFamily:"'Space Mono',monospace",letterSpacing:.5,marginTop:2}}>{isPro?"PRO MEMBER":"FREE TIER"}</div>
+                </div>
+                {!isPro&&<button onClick={()=>{setAcctMenu(false);setPricingOpen(true);}} style={{width:"100%",textAlign:"left",padding:"8px 11px",background:"none",border:"none",borderBottom:`1px solid ${C.border}`,color:C.elite,fontSize:9,fontWeight:700,fontFamily:"'Space Mono',monospace",cursor:"pointer"}}>◆ Upgrade to Pro</button>}
+                <button onClick={()=>{setAcctMenu(false);logout();}} style={{width:"100%",textAlign:"left",padding:"8px 11px",background:"none",border:"none",color:C.t2,fontSize:9,fontWeight:700,fontFamily:"'Space Mono',monospace",cursor:"pointer"}}>Log out</button>
+              </div>
+            </>}
+          </div>
         </div>
       </div>
-      {rfr&&rfrP&&<div style={{marginTop:5,fontSize:8,color:C.acc,fontFamily:"'Space Mono',monospace",animation:"pulse 1.5s infinite"}}>⟳ {rfrP}</div>}
-      {!rfr&&<div style={{marginTop:3,fontSize:7,color:C.t4,fontFamily:"'Space Mono',monospace"}}>{lr}</div>}
+      <div style={{marginTop:3,fontSize:7,color:C.t4,fontFamily:"'Space Mono',monospace"}}>{lr}</div>
     </div>
-
-    {rLog.length>0&&<div style={{borderBottom:`1px solid ${C.border}`,background:C.bg2}}>
-      <button onClick={()=>setShowLog(v=>!v)} style={{width:"100%",padding:"5px 15px",display:"flex",alignItems:"center",gap:6,background:"none",border:"none",cursor:"pointer",textAlign:"left"}}>
-        <span style={{fontSize:7,fontWeight:700,color:C.t3,fontFamily:"'Space Mono',monospace",letterSpacing:1}}>REFRESH LOG</span>
-        {rCount>0&&<span style={{fontSize:6,color:C.t4,fontFamily:"'Space Mono',monospace"}}>#{rCount}</span>}
-        <div style={{display:"flex",gap:2,flex:1,flexWrap:"wrap"}}>
-          {rLog.map((e,i)=>{
-            const dot=e.status==="ok"?C.acc:e.status==="fail"?C.err:e.status==="running"?C.warn:C.t4;
-            return<div key={i} title={`${e.label}: ${e.status}${e.status==="ok"?` (${e.count} players)`:""}`} style={{width:6,height:6,borderRadius:"50%",background:dot,flexShrink:0,animation:e.status==="running"?"pulse .8s infinite":"none"}}/>;
-          })}
-        </div>
-        {rfr?<span style={{fontSize:6,color:C.warn,fontFamily:"'Space Mono',monospace",animation:"pulse 1s infinite"}}>RUNNING</span>:
-          rLog.every(e=>e.status==="ok")?<span style={{fontSize:6,color:C.acc,fontFamily:"'Space Mono',monospace"}}>✓ ALL OK</span>:
-          rLog.filter(e=>e.status==="fail").length===rLog.length&&rLog.every(e=>["ok","fail"].includes(e.status))?<span style={{fontSize:6,color:C.err,fontFamily:"'Space Mono',monospace"}}>⚠ ALL FAILED</span>:
-          rLog.every(e=>["ok","fail"].includes(e.status))?<span style={{fontSize:6,color:C.warn,fontFamily:"'Space Mono',monospace"}}>{rLog.filter(e=>e.status==="ok").length}/{rLog.length} OK</span>:null}
-        <span style={{fontSize:7,color:C.t4,transform:showLog?"rotate(180deg)":"",transition:"transform .2s",display:"inline-block"}}>▼</span>
-      </button>
-      {showLog&&<div style={{padding:"5px 15px 8px",animation:"fadeIn .2s ease"}}>
-        {rLog.every(e=>e.status==="fail")&&<div style={{padding:"5px 8px",marginBottom:6,borderRadius:4,background:C.errDim,border:`1px solid ${C.err}33`,fontSize:7,color:C.err,fontFamily:"'Space Mono',monospace"}}>
-          ⚠ ALL POSITIONS FAILED — This is likely a CORS block. Browsers prevent direct calls to the Anthropic API from a webpage for security. The refresh animation runs but no live data is fetched. A backend proxy is needed to fix this.
-        </div>}
-        <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:3}}>
-          {rLog.map((e,i)=>{
-            const sc=e.status==="ok"?C.acc:e.status==="fail"?C.err:e.status==="running"?C.warn:C.t4;
-            const bg=e.status==="ok"?C.accDim:e.status==="fail"?C.errDim:e.status==="running"?C.warnDim:C.bg3;
-            const ic=e.status==="ok"?"✓":e.status==="fail"?"✕":e.status==="running"?"⟳":"·";
-            return<div key={i} style={{display:"flex",alignItems:"center",gap:4,padding:"3px 6px",borderRadius:3,background:bg,border:`1px solid ${sc}22`}}>
-              <span style={{fontSize:8,color:sc,fontFamily:"'Space Mono',monospace",width:8,textAlign:"center",animation:e.status==="running"?"spin .7s linear infinite":"none",display:"inline-block"}}>{ic}</span>
-              <span style={{fontSize:7,color:C.t2,fontWeight:600,flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{e.label}</span>
-              {e.status==="ok"&&<span style={{fontSize:6,color:C.t3,fontFamily:"'Space Mono',monospace"}}>{e.count}p</span>}
-              {e.ts&&<span style={{fontSize:6,color:C.t4,fontFamily:"'Space Mono',monospace"}}>{e.ts}</span>}
-            </div>;
-          })}
-        </div>
-      </div>}
-    </div>}
 
     <div style={{padding:"6px 15px",borderBottom:`1px solid ${C.border}`,display:"flex",gap:4,alignItems:"center",flexWrap:"wrap"}}>
       <div style={{flex:1,minWidth:130,position:"relative"}}>
         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={C.t4} strokeWidth="2" style={{position:"absolute",left:7,top:"50%",transform:"translateY(-50%)"}}><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
-        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search..." style={{width:"100%",padding:"5px 7px 5px 24px",background:C.bg2,border:`1px solid ${C.border}`,borderRadius:4,color:C.t1,fontSize:10,fontFamily:"'Outfit',sans-serif",outline:"none"}}/>
+        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search player or card..." style={{width:"100%",padding:"5px 7px 5px 24px",background:C.bg2,border:`1px solid ${C.border}`,borderRadius:4,color:C.t1,fontSize:10,fontFamily:"'Outfit',sans-serif",outline:"none"}}/>
       </div>
-      <button onClick={()=>setTt(!tt)} style={{padding:"4px 8px",borderRadius:4,border:`1px solid ${tt?C.blue+"66":C.border}`,background:tt?C.blueDim:C.bg2,cursor:"pointer",display:"flex",alignItems:"center",gap:3,transition:"all .2s"}}>
-        <div style={{width:20,height:11,borderRadius:5,background:tt?C.blue:C.t4,position:"relative",transition:"background .2s"}}><div style={{width:7,height:7,borderRadius:4,background:"#fff",position:"absolute",top:2,left:tt?11:2,transition:"left .2s"}}/></div>
-        <span style={{fontSize:7,fontWeight:600,color:tt?C.blue:C.t3,fontFamily:"'Space Mono',monospace"}}>50/50 TT</span>
-      </button>
     </div>
 
-    <div style={{display:"flex",gap:2,padding:"6px 15px",borderBottom:`1px solid ${C.border}`,overflowX:"auto"}}>
-      {Object.keys(PC).map(k=><button key={k} onClick={()=>setPos(k)} style={{padding:"4px 12px",borderRadius:4,border:"none",cursor:"pointer",fontSize:9,fontWeight:700,fontFamily:"'Space Mono',monospace",letterSpacing:.5,transition:"all .2s",flexShrink:0,background:pos===k?C.acc:C.bg2,color:pos===k?C.bg:C.t3,boxShadow:pos===k?`0 0 10px ${C.accGlow}`:"none"}}>{k}</button>)}
-    </div>
-
-    {cfg.subs&&<div style={{display:"flex",gap:2,padding:"5px 15px",borderBottom:`1px solid ${C.border}`,overflowX:"auto"}}>
-      <button onClick={()=>setSub(null)} style={{padding:"2px 8px",borderRadius:3,border:`1px solid ${!sub?C.borderHi:C.border}`,cursor:"pointer",fontSize:8,fontWeight:600,fontFamily:"'Space Mono',monospace",background:!sub?C.bg3:"transparent",color:!sub?C.t1:C.t3}}>ALL</button>
-      {cfg.subs.map(s=><button key={s} onClick={()=>setSub(s)} style={{padding:"2px 8px",borderRadius:3,border:`1px solid ${sub===s?C.borderHi:C.border}`,cursor:"pointer",fontSize:8,fontWeight:600,fontFamily:"'Space Mono',monospace",background:sub===s?C.bg3:"transparent",color:sub===s?C.t1:C.t3}}>{s}</button>)}
+    {/* Landing / hero — dismissible value-prop. Original copy. */}
+    {!heroDismissed&&<div style={{margin:"11px 15px 0",padding:narrow?"12px 13px":"15px 17px",borderRadius:10,position:"relative",overflow:"hidden",background:`linear-gradient(135deg,${C.bg2},${C.bg4})`,border:`1px solid ${C.borderHi}`,boxShadow:`0 0 0 1px ${C.acc}11, 0 0 30px ${C.acc}0c`}}>
+      <div style={{position:"absolute",inset:0,pointerEvents:"none",background:`radial-gradient(120% 120% at 100% 0%,${C.acc}10,transparent 55%)`}}/>
+      <button onClick={()=>setHeroDismissed(true)} title="Dismiss" style={{position:"absolute",top:8,right:9,zIndex:2,background:"none",border:"none",color:C.t3,fontSize:14,lineHeight:1,cursor:"pointer",padding:3}}>✕</button>
+      <div style={{position:"relative",zIndex:1}}>
+        <div style={{display:"inline-flex",alignItems:"center",gap:5,padding:"2px 8px",borderRadius:20,background:C.accDim,border:`1px solid ${C.acc}33`,marginBottom:9}}>
+          <div style={{width:4,height:4,borderRadius:"50%",background:C.acc,animation:"pulse 2s infinite"}}/>
+          <span style={{fontSize:7,fontWeight:700,letterSpacing:1.2,color:C.acc,fontFamily:"'Space Mono',monospace"}}>LIVE MADDEN 26 MARKET INTEL</span>
+        </div>
+        <div style={{fontSize:narrow?17:21,fontWeight:900,letterSpacing:-.6,lineHeight:1.15,maxWidth:560}}>Catch the underpriced cards <span style={{color:C.acc}}>before the board does</span>.</div>
+        <div style={{fontSize:narrow?10:11,color:C.t2,fontFamily:"'Outfit',sans-serif",lineHeight:1.55,marginTop:7,maxWidth:520}}>Panda Actual Sniper reads the live auction-house market so you don't have to. Set your margin, let the <b style={{color:C.t1}}>Snipe</b> engine flag every flip worth taking, or sweep the priced <b style={{color:C.t1}}>Catalog</b> to see where the whole market is moving.</div>
+        <div style={{display:"flex",gap:14,flexWrap:"wrap",marginTop:11}}>
+          {[["🎯","Snipe","margin-aware deal radar"],["📊","Catalog","live mut.gg priced index"],["📈","Trends","real per-card price history"]].map(([ic,h,s])=>(
+            <div key={h} style={{display:"flex",alignItems:"center",gap:7,minWidth:0}}>
+              <span style={{fontSize:15}}>{ic}</span>
+              <div style={{minWidth:0}}>
+                <div style={{fontSize:9.5,fontWeight:800,color:C.t1,letterSpacing:-.2}}>{h}</div>
+                <div style={{fontSize:7,color:C.t3,fontFamily:"'Space Mono',monospace",whiteSpace:"nowrap"}}>{s}</div>
+              </div>
+            </div>))}
+        </div>
+      </div>
     </div>}
 
-    {(()=>{const eng=getEng(pos,sub);return<div style={{margin:"7px 15px 0",padding:"7px 9px",borderRadius:6,background:`linear-gradient(135deg,${C.bg2},${C.bg4})`,border:`1px solid ${C.border}`}}>
-      <div style={{fontSize:7,color:C.acc,fontWeight:700,fontFamily:"'Space Mono',monospace",letterSpacing:1,marginBottom:1}}>{eng.engine.toUpperCase()}</div>
-      <div style={{fontSize:9,color:C.t1,fontFamily:"'Space Mono',monospace",fontWeight:400,opacity:.85,overflowX:"auto",whiteSpace:"nowrap"}}>{eng.formula}</div>
-    </div>;})()}
-
-    <div style={{display:"flex",gap:2,padding:"7px 15px 3px"}}>
-      {[{k:"players",l:"Player Rankings"},{k:"snipe",l:"🎯 Snipe"},{k:"thresholds",l:"Thresholds"}].map(t=><button key={t.k} onClick={()=>setTab(t.k)} style={{padding:"2px 8px",borderRadius:3,border:`1px solid ${tab===t.k?C.borderHi:C.border}`,cursor:"pointer",fontSize:8,fontWeight:600,background:tab===t.k?C.bg3:"transparent",color:tab===t.k?C.t1:C.t3}}>{t.l}</button>)}
+    <div style={{display:"flex",gap:3,padding:"8px 15px 0",overflowX:"auto"}}>
+      {[{k:"snipe",l:"🎯 Snipe"},{k:"catalog",l:"📊 Catalog"}].map(t=><button key={t.k} onClick={()=>setTab(t.k)} style={{flexShrink:0,padding:"5px 14px",borderRadius:"6px 6px 0 0",border:`1px solid ${tab===t.k?C.borderHi:C.border}`,borderBottom:tab===t.k?`1px solid ${C.bg}`:`1px solid ${C.border}`,cursor:"pointer",fontSize:10,fontWeight:700,fontFamily:"'Space Mono',monospace",background:tab===t.k?C.bg3:"transparent",color:tab===t.k?C.t1:C.t3,marginBottom:-1,position:"relative",zIndex:1}}>{t.l}</button>)}
     </div>
 
-    <div style={{padding:"3px 15px 36px",maxHeight:"calc(100vh - 300px)",overflowY:"auto"}}>
-      {tab==="players"&&<div style={{animation:"fadeIn .4s ease"}}>
-        {pl.length===0&&<div style={{padding:20,textAlign:"center",color:C.t4,fontFamily:"'Space Mono',monospace",fontSize:10}}>{search?`No results for "${search}"`:"No players"}</div>}
-        {pl.map((p,i)=><Card key={`${p.name}-${p.card}-${i}`} p={p} pos={pos} sub={sub}/>)}
-        {pl.length>1&&<Bars pl={pl}/>}
-      </div>}
-      {tab==="snipe"&&<SnipePanel players={players} search={search} listed={snListed} setListed={setSnListed} mvOv={snMvOv} setMvOv={setSnMvOv} profitMin={profitMin} setProfitMin={setProfitMin} discountMin={discountMin} setDiscountMin={setDiscountMin} matchMode={matchMode} setMatchMode={setMatchMode}/>}
-      {tab==="thresholds"&&<div style={{display:"flex",flexDirection:"column",gap:4,animation:"fadeIn .4s ease"}}>
-        {THRESHOLDS.map((t,i)=><div key={i} style={{display:"flex",alignItems:"center",gap:7,padding:"6px 9px",background:C.bg2,borderRadius:6,border:`1px solid ${C.border}`}}>
-          <div style={{width:30,height:30,borderRadius:4,display:"flex",alignItems:"center",justifyContent:"center",background:C.accDim,fontSize:12,fontWeight:900,color:C.acc,fontFamily:"'Space Mono',monospace",flexShrink:0}}>{t.v}</div>
-          <div style={{flex:1,minWidth:0}}><div style={{display:"flex",alignItems:"center",gap:3}}><span style={{fontSize:9,fontWeight:700,color:C.t1}}>{t.l}</span><span style={{fontSize:6,color:C.acc,background:C.accDim,padding:"1px 3px",borderRadius:2,fontFamily:"'Space Mono',monospace",fontWeight:600}}>{t.c}</span></div><div style={{fontSize:7,color:C.t3,marginTop:1}}>{t.a} · {t.e}</div></div>
-        </div>)}
-      </div>}
+    <div style={{padding:"9px 15px 36px",maxHeight:"calc(100vh - 150px)",overflowY:"auto",borderTop:`1px solid ${C.border}`}}>
+      {tab==="snipe"&&<SnipePanel players={players} search={search} listed={snListed} setListed={setSnListed} mvOv={snMvOv} setMvOv={setSnMvOv} profitMin={profitMin} setProfitMin={setProfitMin} discountMin={discountMin} setDiscountMin={setDiscountMin} matchMode={matchMode} setMatchMode={setMatchMode} platform={plat}/>}
+      {tab==="catalog"&&<CatalogPanel platform={plat} search={search} onAdd={addToSnipe} addedKeys={addedKeys} isPro={isPro} onUpgrade={()=>setPricingOpen(true)}/>}
     </div>
+
+    {/* Footer — independent project, original copy, trademark + ToS disclaimers. */}
+    <footer style={{borderTop:`1px solid ${C.border}`,background:`linear-gradient(180deg,${C.bg},${C.bg2})`,padding:"16px 15px 22px"}}>
+      <div style={{maxWidth:680,margin:"0 auto"}}>
+        <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:7}}>
+          <div style={{width:20,height:20,borderRadius:5,display:"flex",alignItems:"center",justifyContent:"center",background:`linear-gradient(135deg,${C.acc},${C.elite})`,fontSize:10,fontWeight:900}}>◈</div>
+          <div style={{fontSize:11,fontWeight:800,letterSpacing:-.4}}>PANDA ACTUAL <span style={{color:C.acc}}>SNIPER</span></div>
+        </div>
+        <div style={{fontSize:9,color:C.t2,fontFamily:"'Outfit',sans-serif",lineHeight:1.55,marginBottom:10,maxWidth:560}}>
+          A scrappy market terminal for Ultimate Team flippers — built to surface the snipes and read the board, fast.
+        </div>
+        <div style={{fontSize:7.5,color:C.t3,fontFamily:"'Space Mono',monospace",lineHeight:1.75,marginBottom:8}}>
+          <div>Independent fan-made project. Not affiliated with, sponsored by, or endorsed by EA Sports / Electronic Arts Inc.</div>
+          <div>"Madden", "Madden NFL", and "Madden Ultimate Team" are trademarks of their respective owners. All player and team names belong to their holders.</div>
+          <div>Pricing reflects third-party community data (mut.gg) and may lag the in-game market. No coins, accounts, or in-game value are bought, sold, or transferred here.</div>
+          <div>The optional <button onClick={()=>{setHeroDismissed(true);setTab("snipe");}} style={{background:"none",border:"none",padding:0,color:C.warn,fontFamily:"'Space Mono',monospace",fontSize:7.5,fontWeight:700,cursor:"pointer",textDecoration:"underline"}}>live feed</button> reads your own captured EA session and may violate EA's terms — see the in-app risk notice before enabling it. Use it on an account you accept the risk of losing.</div>
+        </div>
+        <div style={{fontSize:7,color:C.t4,fontFamily:"'Space Mono',monospace",letterSpacing:.5,borderTop:`1px solid ${C.border}`,paddingTop:8}}>© {new Date().getFullYear()} Panda Actual Sniper · An indie tool, built by one flipper for flippers.</div>
+      </div>
+    </footer>
+
+    {authOpen&&<AuthModal onClose={()=>setAuthOpen(false)} login={login} signup={signup}/>}
+    {pricingOpen&&<PricingModal onClose={()=>setPricingOpen(false)} user={user} isPro={isPro} onUpgrade={startCheckout} onNeedAuth={()=>{setPricingOpen(false);setAuthOpen(true);}}/>}
   </div>);
 }
