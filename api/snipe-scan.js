@@ -15,6 +15,8 @@
 //   • Using your EA session token against the Companion API violates EA's User
 //     Agreement and can get the account banned. Use an account you can lose.
 
+import { checkEAEndpoint } from "./_lib/net-guard.js";
+
 const BLOCKED = /(purchase|checkout|\/buy\b|\bbid\b|\/sell\b|\blist\b|transfermarket\/.*\/(buy|bid))/i;
 const AH_TAX = 0.10;
 const PLAT_FIELD = { pc: "pcPrice", ps5: "ps5Price", ps4: "ps4Price", xbsx: "xbsxPrice", xb1: "xb1Price" };
@@ -57,9 +59,10 @@ export default async function handler(req, res) {
   const { endpoint, method = "GET", token, headers = {}, body, arrPath = "", nameKey = "", priceKey = "" } = feed;
 
   if (!endpoint) return res.status(400).json({ error: "Missing feed.endpoint." });
-  let url;
-  try { url = new URL(endpoint); } catch { return res.status(400).json({ error: "Invalid endpoint URL." }); }
-  if (url.protocol !== "https:") return res.status(400).json({ error: "Endpoint must be https." });
+  // SSRF guard: https + allowed EA host only, no private/internal addresses.
+  const chk = checkEAEndpoint(endpoint);
+  if (!chk.ok) return res.status(400).json({ error: chk.error });
+  const url = chk.url;
   const m = String(method).toUpperCase();
   if (!["GET", "POST"].includes(m)) return res.status(400).json({ error: "Only GET/POST searches are allowed." });
 
